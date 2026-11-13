@@ -1,0 +1,17 @@
+node_modules/
+dist/
+artifacts/
+backups/
+page-notes-*.json
+playwright-report/
+test-results/
+.codex-cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crx
+*.log
+.DS_Store
+Thumbs.db

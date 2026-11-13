@@ -1,0 +1,6 @@
+{
+  "permissions": ["activeTab", "scripting", "storage"],
+  "optional_permissions": [],
+  "host_permissions": [],
+  "optional_host_permissions": []
+}

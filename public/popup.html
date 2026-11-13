@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page Notes</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body class="popup">
+    <header class="popup-header">
+      <div class="brand">
+        <img src="icons/icon-32.png" width="28" height="28" alt="" />
+        <h1>Page Notes</h1>
+      </div>
+      <button id="open-library" class="button-text" type="button">Open library</button>
+    </header>
+    <main class="popup-main">
+      <section class="current-page" aria-labelledby="page-title">
+        <p class="eyebrow">THIS PAGE</p>
+        <h2 id="page-title">Open a webpage to get started</h2>
+        <p id="page-url" class="muted">Notes for the page you are viewing</p>
+      </section>
+      <form id="note-form">
+        <fieldset id="note-fields" disabled>
+          <label for="note-text">Your note</label>
+          <textarea
+            id="note-text"
+            maxlength="5000"
+            rows="5"
+            placeholder="A thought, a reminder, something to come back to…"
+            aria-describedby="save-hint character-count"
+          ></textarea>
+          <div class="field-meta">
+            <span id="save-hint">Save before closing.</span
+            ><span id="character-count">0 / 5,000</span>
+          </div>
+          <section id="quote-section" class="selection" hidden aria-label="Selected text">
+            <div class="selection-heading">
+              <span class="eyebrow">SELECTED TEXT</span
+              ><button id="remove-quote" type="button" class="button-text">Remove</button>
+            </div>
+            <blockquote id="quote"></blockquote>
+          </section>
+          <button
+            id="capture-selection"
+            class="button-secondary capture"
+            type="button"
+            title="Capture up to 2,000 characters selected in the main webpage"
+          >
+            Capture selection
+          </button>
+          <div class="form-actions">
+            <button id="save-note" type="submit" class="button-primary" disabled>Save note</button
+            ><button id="delete-note" type="button" class="button-text danger-text" hidden>
+              Delete note
+            </button>
+          </div>
+        </fieldset>
+      </form>
+      <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Loading…</p>
+    </main>
+    <footer class="popup-footer">
+      Local to this device <span aria-hidden="true">·</span> No account needed
+    </footer>
+    <dialog
+      id="confirm-dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-description"
+    >
+      <form method="dialog">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-description"></p>
+        <div class="dialog-actions">
+          <button id="cancel-action" value="cancel" class="button-secondary" autofocus>
+            Cancel</button
+          ><button id="confirm-action" value="confirm" class="button-danger">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

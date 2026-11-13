@@ -1,0 +1,9 @@
+node_modules/
+dist/
+artifacts/
+playwright-report/
+test-results/
+.codex-cache/
+package-lock.json
+*.zip
+*.png

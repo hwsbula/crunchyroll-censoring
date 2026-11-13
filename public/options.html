@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your library — Page Notes</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="options.js"></script>
+  </head>
+  <body class="options">
+    <div class="page-shell">
+      <header class="library-header">
+        <div class="brand">
+          <img src="icons/icon-48.png" width="34" height="34" alt="" /><span>Page Notes</span>
+        </div>
+        <span class="local-label">Stored on this device</span>
+      </header>
+      <main id="library">
+        <section class="library-intro">
+          <p class="eyebrow">YOUR LIBRARY</p>
+          <h1>A place for what you noticed.</h1>
+          <p class="intro-copy">Notes and selected text, kept with the pages they came from.</p>
+        </section>
+        <div class="library-tools">
+          <div class="search-field">
+            <label for="search">Search notes</label
+            ><input
+              id="search"
+              type="search"
+              placeholder="Search by title, address, or note…"
+              autocomplete="off"
+            />
+          </div>
+          <button id="refresh-notes" type="button" class="button-secondary">Refresh</button>
+        </div>
+        <div class="library-summary">
+          <p id="note-count">0 / 200 notes</p>
+          <p>Most recently saved first</p>
+        </div>
+        <section id="notes-list" class="notes-list" aria-label="Saved notes"></section>
+        <section id="empty-state" class="empty-state" hidden>
+          <img src="icons/icon-48.png" width="44" height="44" alt="" />
+          <h2 id="empty-title">Keep a thought with the page</h2>
+          <p id="empty-description">Open a webpage and save your first note.</p>
+        </section>
+        <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">
+          Loading…
+        </p>
+        <section class="data-panel" aria-labelledby="data-title">
+          <div>
+            <h2 id="data-title">Your notes, in your hands.</h2>
+            <p>
+              Export a JSON backup before changing devices or removing the extension. Import merges
+              notes by page address; the later saved date wins.
+            </p>
+          </div>
+          <div class="data-actions">
+            <button id="export-notes" type="button" class="button-secondary" disabled>
+              Export backup
+            </button>
+            <label class="file-label" for="import-file"
+              >Import backup
+              <input id="import-file" type="file" accept=".json,application/json" disabled
+            /></label>
+            <button id="clear-notes" type="button" class="button-text danger-text" disabled>
+              Clear all notes
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer class="library-footer">
+        <p>
+          Page titles, addresses, selected text, and notes stay in this Chrome profile. Nothing is
+          sent to the developer or a server.
+        </p>
+        <p>
+          Notes and backups are not encrypted by this extension. Uninstalling removes local notes.
+          No sync or account is required.
+        </p>
+      </footer>
+    </div>
+    <template id="note-template">
+      <article class="note-card">
+        <div class="note-card-heading">
+          <h2 class="note-title"></h2>
+          <time></time>
+        </div>
+        <a class="note-address" target="_blank" rel="noopener noreferrer"></a>
+        <p class="note-text"></p>
+        <blockquote class="note-quote"></blockquote>
+        <div class="note-card-actions">
+          <a class="open-note" target="_blank" rel="noopener noreferrer">Open page</a
+          ><button class="delete-note button-text danger-text" type="button">Delete</button>
+        </div>
+      </article>
+    </template>
+    <dialog
+      id="confirm-dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-description"
+    >
+      <form method="dialog">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-description"></p>
+        <div class="dialog-actions">
+          <button id="cancel-action" value="cancel" class="button-secondary" autofocus>
+            Cancel</button
+          ><button id="confirm-action" value="confirm" class="button-primary">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
