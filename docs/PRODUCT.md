@@ -1,53 +1,69 @@
-# Current product
+# QuietRoll — current product
 
-**Status: scaffold demonstration; browser verification incomplete.** The user has not yet selected the product to build from this copy.
+A local MV3 profanity filter for English captions and matching English-dub audio on Crunchyroll desktop. Version 0.1.3 automatically rechecks subtitle selection on each episode and makes transient loading notices quieter. It remains an integration preview: the live service is inaccessible in this environment. Universal English-dub coverage is an unmet part of the goal.
 
-Codex maintains this file. On the first real extension request, replace the demo description with the inferred product goal, material decisions, and acceptance criteria. The user can start with one sentence and does not need to complete this document. Operational instructions live in [AGENTS.md](../AGENTS.md).
+## Decisions and acceptance criteria
 
-## Included demonstration: Page Notes
+- Preserve the existing strict TypeScript/esbuild/npm/Playwright release foundation; replace the Page Notes demonstration.
+- Use observed playback metadata and only its English subtitle/caption resources. Do not authenticate, request alternate episode versions, change hard-sub streams, or use transcription.
+- English audio requires an English CC track belonging to the current playback version. Translated Japanese-version dialogue and signs tracks never drive audio muting.
+- Japanese, unknown, and unsupported audio remain unchanged. Manual language selection resolves missing detection only, never missing captions or conflicting reliable metadata.
+- Integrate before ASS rendering with recognized SubtitlesOctopus or before browser paint with the identified Bitmovin DOM caption layer. Preserve native styling/timing and original text. Require selected English track metadata and exact current cue agreement. Unsupported/hardcoded paths report unavailable; never conceal speculative layers.
+- Use bounded whole-cue mute padding, media-time scheduling, and per-element mute ownership. Settings and exceptions use a new isolated local schema; old demo data is untouched.
+- Provide masked occurrence review, timestamp seeking, per-occurrence Ignore/Unignore, local term settings, retry, and persistent player coverage warnings.
+- Keep complete tracks and bounded playback logs only in frame memory; persist only settings and hashed occurrence exceptions. No external transmission or general fetch bridge.
+- Test fixture behavior separately from live service behavior. A release ZIP does not establish live compatibility.
 
-**Purpose:** Save a personal note and an optional selected quotation for a web page, then find and manage saved notes.
+## External evidence and blockers
 
-**Audience:** Someone collecting small pieces of information while browsing, without an account or remote service.
+The reference README and popup/options JS were inspected via the GitHub connector. Current Chrome manifest/content-script/service-worker/storage/tabs/messaging documentation was reviewed. Crunchyroll live access returned proxy CONNECT 403; shared browser automation failed with “Browser Use could not read requirements” and unavailable AT-SPI. Further browser checks will use the repository's Playwright tooling (Browser plugin absent).
 
-## Current decisions
+Delivery and test results will be recorded after verification.
 
-| Decision                                                  | Reason                                                                          |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Popup for the current page; separate library/options page | Keep capture quick while providing room for managing saved records.             |
-| Local-only storage; no account or network service         | The demo does not need sharing or synchronization.                              |
-| `activeTab`, `scripting`, `storage`                       | Support explicit page capture and persistence without permanent website access. |
-| Main-document capture, excluding forms                    | Bound the example's page access to selected reading content.                    |
-| Versioned storage, serialized writes, revision checks     | Preserve saved data and reject stale edits.                                     |
-| URL fragments ignored, queries retained                   | Share notes across ordinary in-page anchors while preserving page identifiers.  |
-| At most 200 notes with bounded fields                     | Keep the example's storage and import behavior predictable.                     |
+## Delivery and verified results — November 12, 2026
 
-The exact current permission inventory is [extension.policy.json](../extension.policy.json). These choices apply to the demo; replace them when the requested product has different needs.
+- **Delivered:** QuietRoll 0.1.0 source, loadable `dist/`, `artifacts/quietroll-0.1.0.zip` and its SHA-256 sidecar. Runtime archive: 46,968 bytes, 13 production files. The prior generated demo archives were moved to `/tmp/quietroll-previous-demo-artifacts/` to keep the current artifact folder unambiguous.
+- **Release gate passed:** `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release`. Formatting, ESLint, strict TypeScript, **20 unit tests**, **7 unpacked-extension Chromium scenarios**, build, permission/CSP/resource validation and packaging passed. No tests were skipped. Final Chromium suite took 34.7 seconds.
+- **Archive inspection passed:** manifest at ZIP root; exact ZIP/dist byte equality; only the storage API permission and the two reviewed hosts; no fixture/test code or permissions; expected icon dimensions; checksum verified.
+- **SHA-256:** `a767700df4e6b47bda1fe586d5a3d89940b012d79030cb6737e40de76572154d`.
+- **Browser environment:** Chromium 158.0.8127.18, actual MV3 extension contexts, headless, 1100×850 for player tests; options additionally at 390×844; popup screenshot at 410×600. Browser plugin absent; existing Playwright tooling used.
+- **Interaction evidence:** popup masking/reveal, Ignore/Unignore, same-cue mute retention, timestamp seeking, native restoration, track off/on, separate languages/statuses, settings and exception persistence through full browser restart, clear confirmation/cancellation, keyboard focus, narrow wrapping, fullscreen container, source-reset ad, two tabs, stale actions and actual cross-origin frame replacement all passed on synthetic fixtures.
+- **Screenshot evidence:** `/tmp/quietroll-popup.png`, `/tmp/quietroll-options-desktop.png`, `/tmp/quietroll-options-narrow.png`. Screenshots show fixture behavior, not a live service. Relevant console/page errors were empty for all browser scenarios.
+- **Live-service gate unverified:** Chromium navigation to `https://www.crunchyroll.com` using the inherited proxy failed with `net::ERR_TUNNEL_CONNECTION_FAILED`; curl returned proxy CONNECT 403. Current player source, real episodes in either language, real fullscreen behavior, actual toolbar gesture in Google Chrome, current canvas rendering and same-source ad mapping could not be verified. Chrome 120 itself was not tested.
+- **Open goal at 0.1.0:** universal English-audio coverage remains unmet. Matching dub CC may not exist or load. That release supported only recognized pre-render ASS integration for text. Whole-cue muting can remove surrounding dialogue. Browser throttling and same-source ad timing still need live verification. Current rendering coverage is described in README.md and the 0.1.2 record below.
 
-## Demo acceptance criteria
+## 0.1.1 timestamp navigation revision — November 13, 2026
 
-- The toolbar popup identifies a supported HTTP/S page and saves, reopens, edits, or deletes its note.
-- Selection capture happens on request and reports unavailable access or empty selection clearly.
-- The library searches saved records, opens their pages, and deletes individual entries.
-- JSON export/import preserves valid records using the documented merge policy; invalid imports do not partially mutate data.
-- Bulk deletion requires confirmation. A stale edit cannot silently replace a newer record.
-- Data survives popup closure and worker/browser restart without a server.
-- The built extension loads in Chrome, passes the applicable automated checks, and packages with the manifest at the ZIP root.
+- User-provided evidence: the 0.1.0 popup detects English audio/CC on a real episode, but subtitle filtering remains unavailable. The user reports audio filtering works and timestamp navigation reaches its time but leaves Play/video clicks ineffective until the player's timeline is moved. This is user-reported live behavior, not independent validation by this environment.
+- Correction: use the player's source-inspected Media Session `seekto` handler when registered, preserving its own seek/control state. Await media seek completion with bounded cancellation; preserve playing/paused state and manual sound choices. Native-media fallback remains for players without a captured handler. Never bypass an explicitly disabled/rejected handler.
+- New acceptance criterion: paused episode → popup timestamp → site's Play or video click → playback time advances without moving the timeline. A playing episode must also continue after a timestamp jump. Pending seeks must not act on replacement media/episodes.
+- Focused verification: 25 unit tests passed; the new unpacked-extension browser regression passed with a stateful SDK simulation and real HTML media playback. Full release results will be appended after the gate completes.
+- Live gate still blocked: a fresh Chromium navigation through the inherited proxy returned `ERR_TUNNEL_CONNECTION_FAILED`. No new site access, permission, data transmission, rendering adapter or filtering behavior was added.
 
-## On the next build request
+### 0.1.1 release results
 
-Codex should infer the product from the user's description, record material defaults and acceptance criteria here, and implement it immediately. Resolve routine choices without questions. Ask only about consequential ambiguities that cannot reasonably be inferred, while completing independent work. Replace demo behavior and its supporting tests/docs rather than adding an unrelated product beside it.
+- `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release` passed: formatting, ESLint, strict TypeScript, **25 unit tests**, **9 Chromium scenarios**, production validation and packaging. No skips. Final browser suite: 51.4 seconds. The previously long occurrence/settings browser flow was split into focused scenarios with its assertions retained, after a 30-second test-timeout failure.
+- The new regression demonstrates the reported failure in a stateful SDK fixture, then verifies timestamp → Play, video-click pause/resume, and uninterrupted playing-state navigation using the player-owned handler. Native top-frame and cross-origin frame seek/resume checks also passed. This is fixture-tested behavior; the exact live fix still needs retesting on the user's player.
+- Delivered `dist/`, `artifacts/quietroll-0.1.1.zip` (48,220 bytes / 13 production files), and its checksum sidecar. SHA-256: `c7c26768ec53c286b7997166bb9f35487496aa03e2ed930e8f3626127037cd0a`.
+- Archive inspection passed: root manifest/version, byte equality with `dist/`, same permissions/hosts/CSP/content-script registration as 0.1.0, no fixture code, and matching checksum. Local storage schema/keys are unchanged.
+- Update by copying extracted 0.1.1 files into the originally loaded folder, clicking Reload on QuietRoll at `chrome://extensions`, then refreshing the episode. Keep the same loaded folder/extension ID to preserve local preferences and exceptions. See README.md.
 
-After that first build, keep this file current as the user requests revisions. Record only decisions that affect the product; avoid an unnecessary implementation diary.
+## 0.1.2 subtitle revision — November 13, 2026
 
-## Delivery status
+- User evidence: audio and timestamp behavior now work well; the popup still reports text unavailable. Their actual pasted DOM establishes a Bitmovin video/HTML caption overlay and Katamari controls, but the caption list was empty at capture. No independent live playback is accessible.
+- Add a separate bounded overlay adapter with source-inspected selected-track menu semantics, unique English resource binding, exact active-cue comparison, retained originals, before-paint text-node edits and actual-action logging. Keep ASS, audio muting, native timestamp controls, storage and permissions unchanged.
+- Opening the player's Audio and subtitles menu once identifies the checked English/English [CC] track without changing the user's preference. Unknown/ambiguous labels remain unfiltered. Caption prefetch cannot establish selection. An empty/mismatched or unsupported renderer never reports verified coverage; hardcoded subtitle pixels remain unsupported.
+- New acceptance: repeated characterData/child replacements produce no uncensored frame samples, styles/line breaks remain, Ignore/Unignore and rule edits restore from originals, non-English metadata wins even with identical English-looking text, Japanese audio stays unchanged, actual-container fullscreen works, and track/version changes discard old exceptions. Four focused Chromium fixture scenarios and three new unit cases pass before the full release gate.
+- Live status: another normal proxy request to Crunchyroll returned CONNECT 403. The user-supplied structure and public source were inspected; the new adapter's dynamic cue children, live menu labels and actual rendering still require a user/live check. Cached out-of-band track switches without observable selection/request metadata are not established. Native browser text tracks/canvas-only/hardcoded paths remain unsupported. Whole-cue audio muting and missing/mismatched-CC limitations still apply.
+- **Full release gate passed:** `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release`: formatting, lint, strict TypeScript, **28 unit tests / 13 unpacked-extension browser scenarios**, no failures or skips, production build/manifest checks and packaging. Browser suite: **1.4 minutes**. Browser binary: **Google Chrome for Testing 158.0.8127.18**, Chromium/Playwright, headless. Existing audio/seek/frame/tab/persistence regressions all remain green. Final fullscreen screenshot was visually inspected; relevant console/page errors were empty.
+- **Delivered:** loadable `dist/`, `artifacts/quietroll-0.1.2.zip` (**52,736 bytes / 13 production files**) and SHA-256 sidecar. SHA-256: `b9cda083d42fd4328927156d6a8930cad1260240296ed202e1c81829ed77ed69`. Archive inspection confirms exact ZIP/dist equality, root MV3/version manifest, unchanged API/host permissions, CSP/injection declarations, icon dimensions, no fixture/private data and checksum validity. Update the same loaded folder, Reload QuietRoll, refresh the episode, then open the player's subtitle menu once. Live subtitle behavior remains unverified here.
 
-Codex updates this section for the current product, including which acceptance criteria were actually exercised.
+## 0.1.3 autoplay and flashing-notice revision — November 13, 2026
 
-- Product/version: Page Notes demonstration, 1.0.0.
-- Source checks: formatting, lint, strict TypeScript, and 37 unit tests passed in the creation workspace.
-- Build/package checks: production build, manifest/permission/CSP validation, and ZIP validation passed.
-- Browser acceptance criteria: unverified. The creation workspace blocked automated Chromium startup and unpacked extension installation. Run the included five browser scenarios and the actual toolbar interaction in a permitted environment.
-- Artifacts: `dist/` and `artifacts/page-notes-1.0.0.zip`.
-- Release gate: `npm run release` requires code checks and browser tests to pass before packaging. The supplied demo archive is a build with the browser-verification gap described above.
-- Account setup: repository connection and Codex Cloud environment creation/publication remain to be completed in the user's account.
+- User evidence: 0.1.2 text filtering appears to work, with periodic “waiting for a displayed English cue” messages and a manual menu read needed each new episode. Code inspection found immediate banner display of transient loading states and session-scoped selection reset. A waiting notice alone does not establish a hardcoded subtitle or a filtering failure.
+- Add a bounded automatic read of the current native subtitle menu at each fresh episode/selection invalidation. Conceal only that temporary popup before paint, close only extension-owned opening, restore styles/focus, cancel for actual input and leave user-opened controls alone. Do not select a language, change autoplay/playback or carry a previous track forward. Preserve exact English metadata/cue checks and occurrence identities.
+- Preserve renderer verification across the same track's layer replacement, give short redraws a pending state, and delay continuous loading notices by 1.5 seconds. Genuine unavailable/error states remain visible in-player and popup. Known metadata transition preparation is bounded to seven seconds; stale cues remain invalid. Check SPA navigation before requests so the fallback poll cannot discard the freshly prepared next episode.
+- Target flow: current synthetic episode → real media-ended event → site's own autoplay → fresh episode/version/language metadata → automatic checked-track read → text/audio filtering and advancing playback without a manual menu action. Focused checks passed for three transitions, fresh exceptions, Japanese audio, identical English-looking dialogue under Spanish metadata staying untouched, normal menu ownership/timeout/focus, and 240 redraw frame samples without warning/uncensored text flashes. A null-metadata snapshot bug introduced during development was corrected and given a regression test.
+- Live checks remain unverified. The actual native menu must accept the source-inspected toggle and expose a checked item within the bound. Early captions can remain unfiltered while selection is unresolved; no active status is claimed then. Missing/mismatched dub CC, hardcoded/native/canvas-only text and same-source ad gaps remain limitations. No permissions, hosts, dependencies or persistent schema changed.
+- **Release gate passed:** `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release`: formatting/lint/strict TypeScript, **31 unit tests / 16 unpacked-extension browser scenarios**, no failures/skips/retries, production validation and packaging. Full browser suite: **1.7 minutes** in **Google Chrome for Testing 158.0.8127.18**, headless. Existing audio/seek/frame/storage checks remain green. Final autoplay screenshot was visually inspected.
+- **Delivered:** loadable `dist/`, `artifacts/quietroll-0.1.3.zip` (**54,537 bytes / 13 production files**) and checksum. SHA-256: `21499e6f5babc5e64e41cc258bb6534a0b11f188a377ac3515d162e496dd6560`. Archive inspection passed: ZIP/dist byte equality, root MV3/version manifest, current options version, unchanged permissions/hosts/CSP/injection, expected icons, no tests/private attachments, checksum. Another normal Crunchyroll proxy request returned CONNECT 403; actual live autoplay/menu behavior remains unverified. Update the same loaded folder, Reload QuietRoll, refresh Crunchyroll, retain your chosen English subtitles/CC and leave the site's autoplay enabled.

@@ -1,6 +1,9 @@
 {
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["storage"],
   "optional_permissions": [],
-  "host_permissions": [],
+  "host_permissions": [
+    "https://www.crunchyroll.com/*",
+    "https://static.crunchyroll.com/vilos-v2/web/vilos/player.html*"
+  ],
   "optional_host_permissions": []
 }

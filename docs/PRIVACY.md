@@ -1,57 +1,21 @@
-# Page Notes privacy policy draft
+# QuietRoll privacy
 
-**Publication status:** This draft describes the included Page Notes demonstration. When building a different extension, Codex replaces the product-specific policy with one that describes the actual data practices. You do not need to complete these fields to request or run a local build. Before store publication, supply your publisher name, effective date, and contact method and host the completed policy at a public URL.
+QuietRoll has no analytics, backend, account, paid API, telemetry or cloud transcription. Custom terms, captions and occurrence content are processed locally. It never records a microphone, captures protected media, extracts DRM content, reads authentication headers/cookies/access tokens, or changes subscriptions/authentication.
 
-**Publisher:** [Your publisher name]  
-**Effective date:** [Date]  
-**Contact:** [Support email or contact URL]
+It observes the current player's own playback/episode metadata and reads the English caption resource URLs already supplied by that player, using ordinary page-context HTTPS/CORS requests with `credentials: omit`. These are requests for caption text, not transmission of terms, logs or transcripts. No credentials are copied into extension code. Failed access is reported, not bypassed. Executable extension code is packaged locally; the site's existing subtitle renderer remains the site's code.
 
-## Purpose
+Preferences, enabled built-in terms, custom literal terms, the reveal preference, padding, mode, and up to 1,000 hashed occurrence exceptions are stored in `chrome.storage.local`, restricted to trusted extension contexts. They survive popup closure and browser restart. The new `quietroll.v1` schema does not erase old demonstration data. Uninstalling the extension removes its local storage. Local storage is not separately encrypted by this extension.
 
-Page Notes lets you save personal notes and selected quotations for web pages, then search, revisit, export, import, or delete those notes.
+Complete caption documents, original cue text, live occurrences and applied-action logs exist only in the relevant frame's memory. They are discarded on episode/session invalidation, replacement or page closure. The popup/action log is limited to 1,000 entries; the in-memory detection/scheduling set has an explicit 20,000-match limit. The worker never persists a transcript or viewing-history log. `chrome.storage.session` contains only bounded tab/frame/document routing descriptors, cleared with the browser session and pruned on tab closure.
 
-## Information the extension handles
+A saved exception contains SHA-256 identifiers for episode/version/track/cue/term and match offsets, rather than dialogue, title, timestamp or signed URLs. It can still correlate exact repeated occurrences on this device; it is deliberate persistent user data. Use **Term settings → Clear saved exceptions → Clear all exceptions** to remove it. This does not erase your custom terms/preferences. The term editor displays original terms; the popup masks all matched words in labels and excerpts unless you explicitly enable Reveal originals.
 
-When you invoke the extension on a supported webpage, it reads the current page's URL and title to identify the page. When you request selection capture, it reads selected text in the main page document. It also processes the note text you enter and records needed to manage saved entries, such as timestamps and revision information.
+Temporary signed resource URLs are retained only inside the page's own execution worlds to read/identify the exact track and relay it to the known player frame. They are not logged or placed in extension storage, snapshots, tests using real data, reports, or the privileged message bridge. No diagnostic logging of page metadata/response payloads is enabled. Synthetic test URLs contain only obviously fictitious signatures.
 
-Saving a note stores its page URL, title, note, and any captured quotation in the current Chrome profile. URL fragments are omitted; query parameters are retained and may contain personal information. URLs with an embedded username or password are rejected.
+Required API permission: `storage`. Site access: the Crunchyroll desktop origin and the source-inspected static Vilos player. No every-website permission, microphone, downloads, tab capture, webRequest, remote executable code, or general-purpose privileged fetch/execution interface is present. Chrome enforces host permissions at origin granularity; see `extension.policy.json` for the exact inventory.
 
-Import reads the JSON file you choose and validates it before merging its records into local notes. Export creates a JSON file containing your saved data.
+Version 0.1.1 keeps the current page's registered Media Session seek callback and its video reference in page memory solely to navigate via the player's own controls. These references are neither transmitted nor stored. Registration still reaches the browser unchanged; explicit seeking restrictions are respected. No additional Chrome permissions or hosts are requested.
 
-## Where information is stored and sent
+Version 0.1.2 also reads the identified player's selected subtitle-menu label and its caption overlay text. It keeps original strings for at most 512 current overlay nodes/32,000 characters in page memory to restore text and apply occurrence exceptions. Removed nodes, track changes and page closure release this data. It does not rewrite other page text or retain menu choices as viewing history. The supplied diagnostic DOM was inspected locally; neither the complete paste nor any real transcript is bundled as a test fixture. No data export, new transmission, permission or host access was added.
 
-Saved notes are stored locally using Chrome's extension storage. This extension does not transmit your notes, page details, selections, or import/export contents to the publisher or a third party. It has no account system, remote backend, advertising, tracking, or analytics. It does not synchronize notes through Chrome Sync.
-
-Opening a saved page navigates your browser to that website. The website then receives the normal information associated with your visit under its own privacy practices.
-
-The extension does not encrypt its stored records or exported JSON. Anyone with appropriate access to your device, browser profile, or exported file may be able to read them. If you place an export in a synced or shared folder, that storage service's settings and policies apply to the file.
-
-## Access permissions
-
-- **`activeTab`:** access the current page after you invoke the extension.
-- **`scripting`:** capture selected text when you request that action.
-- **`storage`:** keep notes in the current browser profile.
-
-The extension does not request persistent access to all websites or continuously collect your browsing history. Selection capture targets the main page document and does not read form or password fields.
-
-## Use, sharing, and sale
-
-The extension uses the information only to provide the note-taking and management features described above. The publisher does not receive it through the extension, share it, sell it, or use it for advertising.
-
-Our use of information received through Chrome APIs complies with the Chrome Web Store User Data Policy, including its Limited Use requirements.
-
-## Retention and deletion
-
-Saved notes remain in extension-local storage until you delete individual entries, clear saved notes, or uninstall the extension. Clearing ordinary browsing history does not delete extension-local notes. Bulk deletion uses an in-product confirmation.
-
-Deletion inside the extension does not remove previously exported JSON files or copies you placed elsewhere. Delete those copies separately. Keep an export if you need a backup before uninstalling or changing browser profiles.
-
-## Changes and contact
-
-If a future version changes the data it handles, how it uses that information, or whether information leaves your device, update this policy and provide the disclosures required for that change. Contact the publisher using the method above for questions about the released extension.
-
-## Publisher preparation notes
-
-Remove this preparation section and replace the bracketed fields before publishing. Verify the statements against the actual release; do not retain local-only claims if you add cloud sync, telemetry, authentication, external APIs, or a backend.
-
-The [Chrome Web Store privacy policy requirements](https://developer.chrome.com/docs/webstore/program-policies/privacy) apply when an extension handles user data, including a product with local storage. Complete the dashboard's current disclosures accurately and link the hosted policy. Review [disclosure requirements](https://developer.chrome.com/docs/webstore/program-policies/disclosure-requirements) and [Limited Use rules](https://developer.chrome.com/docs/webstore/program-policies/policies) before submission.
+Version 0.1.3 automates that menu read on each episode. It keeps the current toggle/popup references, original inline visibility styles and focus reference only while the bounded local check runs. It reads the checked subtitle label and closes only its own temporary menu; it does not select a language, change autoplay, or save/infer a cross-episode subtitle preference. It restores styles and releases observers/timers on completion, cancellation, failure and teardown. Warning presentation keeps only two short-lived loading timestamps in frame memory. No new storage data, network request, host access or Chrome permission was introduced.

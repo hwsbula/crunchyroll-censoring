@@ -3,111 +3,136 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Your library — Page Notes</title>
+    <title>QuietRoll — Term settings</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="options.js"></script>
   </head>
   <body class="options">
     <div class="page-shell">
-      <header class="library-header">
+      <header class="header">
         <div class="brand">
-          <img src="icons/icon-48.png" width="34" height="34" alt="" /><span>Page Notes</span>
+          <img src="icons/icon-32.png" alt="" width="32" height="32" />
+          <h1>QuietRoll</h1>
         </div>
-        <span class="local-label">Stored on this device</span>
+        <span class="local">On this device only</span>
       </header>
-      <main id="library">
-        <section class="library-intro">
-          <p class="eyebrow">YOUR LIBRARY</p>
-          <h1>A place for what you noticed.</h1>
-          <p class="intro-copy">Notes and selected text, kept with the pages they came from.</p>
-        </section>
-        <div class="library-tools">
-          <div class="search-field">
-            <label for="search">Search notes</label
-            ><input
-              id="search"
-              type="search"
-              placeholder="Search by title, address, or note…"
-              autocomplete="off"
-            />
-          </div>
-          <button id="refresh-notes" type="button" class="button-secondary">Refresh</button>
-        </div>
-        <div class="library-summary">
-          <p id="note-count">0 / 200 notes</p>
-          <p>Most recently saved first</p>
-        </div>
-        <section id="notes-list" class="notes-list" aria-label="Saved notes"></section>
-        <section id="empty-state" class="empty-state" hidden>
-          <img src="icons/icon-48.png" width="44" height="44" alt="" />
-          <h2 id="empty-title">Keep a thought with the page</h2>
-          <p id="empty-description">Open a webpage and save your first note.</p>
-        </section>
-        <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">
-          Loading…
+      <main>
+        <p class="eyebrow">YOUR FILTER</p>
+        <h2 class="page-title">Choose what gets censored.</h2>
+        <p class="intro">
+          Literal English words and phrases. Your changes apply to active players after saving.
         </p>
-        <section class="data-panel" aria-labelledby="data-title">
-          <div>
-            <h2 id="data-title">Your notes, in your hands.</h2>
-            <p>
-              Export a JSON backup before changing devices or removing the extension. Import merges
-              notes by page address; the later saved date wins.
-            </p>
+        <form id="settings-form">
+          <fieldset id="fields" disabled>
+            <section class="card">
+              <h2>Playback preferences</h2>
+              <label class="check"><input id="enabled" type="checkbox" /> Enable filtering</label
+              ><label for="mode">Default audio mode</label
+              ><select id="mode">
+                <option value="auto">Automatic detection</option>
+                <option value="english">Manual: English audio</option>
+                <option value="japanese">Manual: Japanese audio</option>
+              </select>
+              <p class="help">
+                Reliable detected audio takes priority over an override. An override never supplies
+                missing captions.
+              </p>
+              <label class="check"
+                ><input id="reveal" type="checkbox" /> Reveal original words and context in the
+                popup</label
+              >
+              <div class="padding-fields">
+                <div>
+                  <label for="before">Lead-in (ms)</label
+                  ><input id="before" type="number" min="0" max="300" step="1" required />
+                </div>
+                <div>
+                  <label for="after">Trailing padding (ms)</label
+                  ><input id="after" type="number" min="0" max="300" step="1" required />
+                </div>
+              </div>
+              <p class="help">
+                0–300 ms each. Whole cues are silenced; surrounding dialogue can be lost. These are
+                media-time intervals, including at different playback speeds.
+              </p>
+            </section>
+            <section class="card">
+              <h2>Custom words and phrases</h2>
+              <p class="help">
+                One entry per line, up to 250 entries and 100 characters each. This editor shows
+                original terms. Popup excerpts stay masked by default.
+              </p>
+              <label for="custom">Your literal terms</label
+              ><textarea
+                id="custom"
+                rows="6"
+                spellcheck="false"
+                placeholder="Add a word or multiword phrase"
+              ></textarea>
+              <p class="help">
+                Matching ignores case, normalizes whitespace and curly apostrophes, and respects
+                word boundaries. “ass” does not match “class”. No regular expressions or automatic
+                stemming.
+              </p>
+            </section>
+            <section class="card">
+              <h2>Starter list</h2>
+              <p class="help">
+                Uncheck unwanted built-in terms. Variants are listed explicitly. “hell” and “damn”
+                are included; disable them if they are too broad.
+              </p>
+              <div id="builtins" class="builtins"></div>
+            </section>
+            <div class="actions">
+              <button id="save" class="primary" type="submit">Save settings</button
+              ><button id="reload" type="button">Reload saved settings</button>
+            </div>
+          </fieldset>
+        </form>
+        <p id="status" class="status" role="status" aria-live="polite">Loading saved settings…</p>
+        <section class="card exceptions">
+          <h2>Occurrence exceptions</h2>
+          <p id="exception-count">Loading…</p>
+          <p class="help">
+            Ignore applies to one exact episode/version, track, cue, and match. Exceptions survive
+            restart. Playback logs and complete subtitle tracks are never saved.
+          </p>
+          <button id="clear" type="button" disabled>Clear saved exceptions</button>
+          <div id="clear-confirm" hidden>
+            <p>Restore filtering for all saved exceptions?</p>
+            <button id="confirm-clear" class="primary" type="button">Clear all exceptions</button
+            ><button id="cancel-clear" type="button">Cancel</button>
           </div>
-          <div class="data-actions">
-            <button id="export-notes" type="button" class="button-secondary" disabled>
-              Export backup
-            </button>
-            <label class="file-label" for="import-file"
-              >Import backup
-              <input id="import-file" type="file" accept=".json,application/json" disabled
-            /></label>
-            <button id="clear-notes" type="button" class="button-text danger-text" disabled>
-              Clear all notes
-            </button>
-          </div>
+        </section>
+        <section class="card">
+          <h2>Coverage is per episode</h2>
+          <p>
+            English-dub muting requires matching English dialogue/CC from the current episode
+            version. Japanese audio stays unchanged. Unknown or unsupported audio is left unchanged.
+            Select English subtitles in the player to filter their text when the renderer is
+            supported.
+          </p>
+          <p>
+            When subtitles are off, audio filtering can continue only if the underlying matching CC
+            data is accessible. QuietRoll never changes your subtitle preference. Missing CC,
+            hardcoded subtitles, and unsupported renderers are reported in both the player and
+            popup.
+          </p>
+          <p>
+            <a
+              href="https://help.crunchyroll.com/hc/en-us/articles/360037400412-Subtitles-are-not-showing-up-on-web"
+              target="_blank"
+              rel="noreferrer"
+              >Crunchyroll caption availability help</a
+            >
+          </p>
         </section>
       </main>
-      <footer class="library-footer">
+      <footer>
         <p>
-          Page titles, addresses, selected text, and notes stay in this Chrome profile. Nothing is
-          sent to the developer or a server.
-        </p>
-        <p>
-          Notes and backups are not encrypted by this extension. Uninstalling removes local notes.
-          No sync or account is required.
+          QuietRoll 0.1.3 · Integration preview · No analytics, accounts, or cloud transcription
         </p>
       </footer>
     </div>
-    <template id="note-template">
-      <article class="note-card">
-        <div class="note-card-heading">
-          <h2 class="note-title"></h2>
-          <time></time>
-        </div>
-        <a class="note-address" target="_blank" rel="noopener noreferrer"></a>
-        <p class="note-text"></p>
-        <blockquote class="note-quote"></blockquote>
-        <div class="note-card-actions">
-          <a class="open-note" target="_blank" rel="noopener noreferrer">Open page</a
-          ><button class="delete-note button-text danger-text" type="button">Delete</button>
-        </div>
-      </article>
-    </template>
-    <dialog
-      id="confirm-dialog"
-      aria-labelledby="confirm-title"
-      aria-describedby="confirm-description"
-    >
-      <form method="dialog">
-        <h2 id="confirm-title"></h2>
-        <p id="confirm-description"></p>
-        <div class="dialog-actions">
-          <button id="cancel-action" value="cancel" class="button-secondary" autofocus>
-            Cancel</button
-          ><button id="confirm-action" value="confirm" class="button-primary">Confirm</button>
-        </div>
-      </form>
-    </dialog>
   </body>
 </html>

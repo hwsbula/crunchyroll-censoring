@@ -11,5 +11,5 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   reporter: 'list',
   outputDir:
-    process.env.PLAYWRIGHT_OUTPUT_DIR ?? join(tmpdir(), `page-notes-results-${process.pid}`),
+    process.env.PLAYWRIGHT_OUTPUT_DIR ?? join(tmpdir(), `quietroll-results-${process.pid}`),
 });

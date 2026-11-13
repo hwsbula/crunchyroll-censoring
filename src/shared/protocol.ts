@@ -1,111 +1,156 @@
-import {
-  AppError,
-  LIMITS,
-  object,
-  canonicalUrl,
-  parseBackup,
-  parseNoteInput,
-  revision,
-} from './model.ts';
-import type {
-  Backup,
-  ErrorCode,
-  ImportSummary,
-  Note,
-  NoteInput,
-  PageSelection,
-  State,
-} from './model.ts';
-
-export type Request =
-  | { type: 'state:get' }
-  | { type: 'note:get'; url: string }
-  | { type: 'note:save'; note: NoteInput; expectedRevision: string | null }
-  | { type: 'note:delete'; url: string; expectedRevision: string }
-  | { type: 'notes:clear'; expectedRevision: string }
-  | { type: 'notes:import'; backup: Backup }
-  | { type: 'selection:capture'; tabId: number; url: string };
-
-export interface ResultMap {
-  'state:get': State;
-  'note:get': Note | null;
-  'note:save': Note;
-  'note:delete': null;
-  'notes:clear': null;
-  'notes:import': ImportSummary;
-  'selection:capture': PageSelection;
+import { record, validOccurrenceId, LIMITS } from '../core/settings.ts';
+import type { PlayerSnapshot } from '../core/types.ts';
+import { siteUrl } from '../integration/metadata.ts';
+export interface Target {
+  tabId: number;
+  frameId: number;
+  documentId: string;
+  instance: string;
+  episode: string | null;
+  version: string | null;
 }
-export type Response<T> =
-  { ok: true; data: T } | { ok: false; error: { code: ErrorCode; message: string } };
-
-export function parseRequest(value: unknown): Request {
-  const raw = object(value);
-  switch (raw.type) {
-    case 'state:get':
-      return { type: raw.type };
-    case 'note:get':
-      return { type: raw.type, url: canonicalUrl(raw.url) };
-    case 'note:save':
-      return {
-        type: raw.type,
-        note: parseNoteInput(raw.note),
-        expectedRevision: raw.expectedRevision === null ? null : revision(raw.expectedRevision),
-      };
-    case 'note:delete':
-      return {
-        type: raw.type,
-        url: canonicalUrl(raw.url),
-        expectedRevision: revision(raw.expectedRevision),
-      };
-    case 'notes:clear':
-      return { type: raw.type, expectedRevision: revision(raw.expectedRevision) };
-    case 'notes:import': {
-      if (new TextEncoder().encode(JSON.stringify(raw.backup)).byteLength > LIMITS.importBytes) {
-        throw new AppError('INVALID_INPUT', 'The backup is larger than 5 MB.');
-      }
-      return { type: raw.type, backup: parseBackup(raw.backup) };
-    }
-    case 'selection:capture': {
-      if (!Number.isSafeInteger(raw.tabId) || (raw.tabId as number) < 0)
-        throw new AppError('INVALID_INPUT', 'The selected tab is invalid.');
-      return { type: raw.type, tabId: raw.tabId as number, url: canonicalUrl(raw.url) };
-    }
-    default:
-      throw new AppError('INVALID_INPUT', 'This request is not supported.');
-  }
+export interface RoutedPlayer {
+  target: Target;
+  snapshot: PlayerSnapshot & { hasMedia: boolean };
 }
-
-// Extension IDs alone are insufficient: content scripts share our ID.
-export function isTrustedSender(
-  sender: { id?: string; url?: string },
-  extensionId: string,
+export function trustedUi(
+  sender: { id?: string; url?: string; tab?: unknown },
+  id: string,
 ): boolean {
-  if (sender.id !== extensionId || !sender.url) return false;
+  if (sender.id !== id || !sender.url) return false;
   try {
-    const url = new URL(sender.url);
+    const u = new URL(sender.url);
     return (
-      url.protocol === 'chrome-extension:' &&
-      url.hostname === extensionId &&
-      ['/popup.html', '/options.html'].includes(url.pathname)
+      u.protocol === 'chrome-extension:' &&
+      u.hostname === id &&
+      ['/popup.html', '/options.html'].includes(u.pathname)
     );
   } catch {
     return false;
   }
 }
-
-export async function send<R extends Request>(request: R): Promise<ResultMap[R['type']]> {
-  let response: Response<ResultMap[R['type']]> | undefined;
-  try {
-    response = (await chrome.runtime.sendMessage(request)) as
-      Response<ResultMap[R['type']]> | undefined;
-  } catch {
-    throw new AppError(
-      'INTERNAL_ERROR',
-      'The extension could not connect. Reload the extension and reopen this page.',
-    );
+export function trustedContent(
+  sender: {
+    id?: string;
+    url?: string;
+    tab?: { id?: number | undefined };
+    frameId?: number;
+    documentId?: string;
+  },
+  id: string,
+): boolean {
+  return (
+    sender.id === id &&
+    typeof sender.tab?.id === 'number' &&
+    typeof sender.frameId === 'number' &&
+    typeof sender.documentId === 'string' &&
+    !!sender.url &&
+    siteUrl(sender.url)
+  );
+}
+export function integer(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0)
+    throw new Error('Invalid tab/frame identity.');
+  return Number(value);
+}
+export function parseTarget(value: unknown): Target {
+  const t = record(value);
+  if (
+    typeof t.documentId !== 'string' ||
+    t.documentId.length > 80 ||
+    typeof t.instance !== 'string' ||
+    !/^[a-f0-9-]{36}$/.test(t.instance)
+  )
+    throw new Error('Invalid player identity.');
+  for (const key of ['episode', 'version'])
+    if (
+      t[key] !== null &&
+      (typeof t[key] !== 'string' || !/^[-a-z0-9]{1,80}$/i.test(t[key] as string))
+    )
+      throw new Error('Invalid episode identity.');
+  return {
+    tabId: integer(t.tabId),
+    frameId: integer(t.frameId),
+    documentId: t.documentId,
+    instance: t.instance,
+    episode: t.episode as string | null,
+    version: t.version as string | null,
+  };
+}
+export function parseSnapshot(value: unknown): PlayerSnapshot & { hasMedia: boolean } {
+  const raw = record(value);
+  if (
+    typeof raw.instance !== 'string' ||
+    !/^[a-f0-9-]{36}$/.test(raw.instance) ||
+    typeof raw.hasMedia !== 'boolean' ||
+    !Number.isFinite(raw.time) ||
+    Number(raw.time) < 0 ||
+    Number(raw.time) > 86400 ||
+    !Number.isSafeInteger(raw.total) ||
+    Number(raw.total) < 0
+  )
+    throw new Error('Invalid player report.');
+  for (const key of ['episode', 'version', 'audioLanguage', 'subtitleLanguage'])
+    if (raw[key] !== null && (typeof raw[key] !== 'string' || (raw[key] as string).length > 80))
+      throw new Error('Invalid language report.');
+  for (const key of ['mode', 'trackSummary'])
+    if (typeof raw[key] !== 'string' || (raw[key] as string).length > 1500)
+      throw new Error('Invalid player report.');
+  for (const key of ['audio', 'subtitles']) {
+    const status = record(raw[key]);
+    if (
+      !['loading', 'active', 'unavailable', 'disabled', 'error'].includes(String(status.phase)) ||
+      typeof status.reason !== 'string' ||
+      status.reason.length > 1500
+    )
+      throw new Error('Invalid filter status.');
   }
-  if (!response || typeof response.ok !== 'boolean')
-    throw new AppError('INTERNAL_ERROR', 'The extension did not respond. Reopen it and try again.');
-  if (!response.ok) throw new AppError(response.error.code, response.error.message);
-  return response.data;
+  if (
+    !Array.isArray(raw.occurrences) ||
+    raw.occurrences.length > LIMITS.occurrences ||
+    Number(raw.total) < raw.occurrences.length
+  )
+    throw new Error('Invalid occurrence list.');
+  for (const item of raw.occurrences) {
+    const row = record(item);
+    if (
+      !validOccurrenceId(row.id) ||
+      typeof row.track !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(row.track) ||
+      typeof row.cue !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(row.cue) ||
+      typeof row.text !== 'string' ||
+      row.text.length > 8000 ||
+      typeof row.term !== 'string' ||
+      !row.term ||
+      row.term.length > 100
+    )
+      throw new Error('Invalid occurrence.');
+    if (
+      !Number.isInteger(row.start) ||
+      !Number.isInteger(row.end) ||
+      Number(row.start) < 0 ||
+      Number(row.end) <= Number(row.start) ||
+      Number(row.end) > row.text.length ||
+      !Number.isFinite(row.time) ||
+      !Number.isFinite(row.endTime) ||
+      Number(row.time) < 0 ||
+      Number(row.endTime) <= Number(row.time) ||
+      Number(row.endTime) > 86400
+    )
+      throw new Error('Invalid occurrence timing.');
+    for (const key of ['ignored', 'audioCensored', 'textCensored'])
+      if (typeof row[key] !== 'boolean') throw new Error('Invalid occurrence flags.');
+  }
+  return raw as unknown as PlayerSnapshot & { hasMedia: boolean };
+}
+export async function send<T = unknown>(request: unknown): Promise<T> {
+  const response = record((await chrome.runtime.sendMessage(request)) as unknown);
+  if (response.ok !== true)
+    throw new Error(
+      typeof response.error === 'string'
+        ? response.error
+        : 'The extension could not complete the request.',
+    );
+  return response.data as T;
 }

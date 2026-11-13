@@ -3,80 +3,87 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Page Notes</title>
+    <title>QuietRoll</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="popup.js"></script>
   </head>
   <body class="popup">
-    <header class="popup-header">
+    <header class="header">
       <div class="brand">
-        <img src="icons/icon-32.png" width="28" height="28" alt="" />
-        <h1>Page Notes</h1>
-      </div>
-      <button id="open-library" class="button-text" type="button">Open library</button>
-    </header>
-    <main class="popup-main">
-      <section class="current-page" aria-labelledby="page-title">
-        <p class="eyebrow">THIS PAGE</p>
-        <h2 id="page-title">Open a webpage to get started</h2>
-        <p id="page-url" class="muted">Notes for the page you are viewing</p>
-      </section>
-      <form id="note-form">
-        <fieldset id="note-fields" disabled>
-          <label for="note-text">Your note</label>
-          <textarea
-            id="note-text"
-            maxlength="5000"
-            rows="5"
-            placeholder="A thought, a reminder, something to come back to…"
-            aria-describedby="save-hint character-count"
-          ></textarea>
-          <div class="field-meta">
-            <span id="save-hint">Save before closing.</span
-            ><span id="character-count">0 / 5,000</span>
-          </div>
-          <section id="quote-section" class="selection" hidden aria-label="Selected text">
-            <div class="selection-heading">
-              <span class="eyebrow">SELECTED TEXT</span
-              ><button id="remove-quote" type="button" class="button-text">Remove</button>
-            </div>
-            <blockquote id="quote"></blockquote>
-          </section>
-          <button
-            id="capture-selection"
-            class="button-secondary capture"
-            type="button"
-            title="Capture up to 2,000 characters selected in the main webpage"
-          >
-            Capture selection
-          </button>
-          <div class="form-actions">
-            <button id="save-note" type="submit" class="button-primary" disabled>Save note</button
-            ><button id="delete-note" type="button" class="button-text danger-text" hidden>
-              Delete note
-            </button>
-          </div>
-        </fieldset>
-      </form>
-      <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Loading…</p>
-    </main>
-    <footer class="popup-footer">
-      Local to this device <span aria-hidden="true">·</span> No account needed
-    </footer>
-    <dialog
-      id="confirm-dialog"
-      aria-labelledby="confirm-title"
-      aria-describedby="confirm-description"
-    >
-      <form method="dialog">
-        <h2 id="confirm-title"></h2>
-        <p id="confirm-description"></p>
-        <div class="dialog-actions">
-          <button id="cancel-action" value="cancel" class="button-secondary" autofocus>
-            Cancel</button
-          ><button id="confirm-action" value="confirm" class="button-danger">Confirm</button>
+        <img src="icons/icon-32.png" alt="" width="30" height="30" />
+        <div>
+          <h1>QuietRoll</h1>
+          <p class="eyebrow">CRUNCHYROLL · LOCAL FILTER</p>
         </div>
-      </form>
-    </dialog>
+      </div>
+      <label class="toggle"><input id="enabled" type="checkbox" disabled /> Enabled</label>
+    </header>
+    <main>
+      <section class="connection" aria-label="Player connection">
+        <p id="episode" class="episode">Connecting to the episode…</p>
+        <dl class="languages">
+          <div>
+            <dt>Audio</dt>
+            <dd id="audio-language">Unresolved</dd>
+          </div>
+          <div>
+            <dt>Subtitles</dt>
+            <dd id="subtitle-language">Unresolved</dd>
+          </div>
+        </dl>
+        <label for="mode">Language mode</label
+        ><select id="mode" disabled>
+          <option value="auto">Automatic detection</option>
+          <option value="english">Manual: English audio</option>
+          <option value="japanese">Manual: Japanese audio</option>
+        </select>
+        <p id="selected-mode" class="help">An override resolves missing language detection only.</p>
+      </section>
+      <section class="coverage" aria-label="Filtering coverage">
+        <article>
+          <div class="status-heading">
+            <h2>Audio filtering</h2>
+            <span id="audio-phase" class="badge">Loading</span>
+          </div>
+          <p id="audio-reason">Checking the current player and caption data…</p>
+        </article>
+        <article>
+          <div class="status-heading">
+            <h2>Subtitle filtering</h2>
+            <span id="subtitle-phase" class="badge">Loading</span>
+          </div>
+          <p id="subtitle-reason">Checking for a supported English renderer…</p>
+        </article>
+      </section>
+      <details class="track-details">
+        <summary>Caption source and coverage</summary>
+        <p id="track-summary">Only current, identified English tracks can be filtered.</p>
+        <p>
+          Without word timestamps, the full caption cue is silenced. Some English dubs have no
+          matching CC. Hardcoded subtitles cannot be replaced.
+        </p>
+      </details>
+      <section class="review" aria-labelledby="review-title">
+        <div class="review-heading">
+          <h2 id="review-title">Occurrences <span id="count">0</span></h2>
+          <label class="reveal"
+            ><input id="reveal" type="checkbox" disabled /> Reveal originals</label
+          >
+        </div>
+        <p class="help">
+          Detected matches are upcoming until playback. “Censored” records an applied audio or text
+          action.
+        </p>
+        <ol id="occurrences" class="occurrences" aria-label="Detected occurrences"></ol>
+        <p id="empty" class="empty">Start a Crunchyroll episode to review its English captions.</p>
+        <p id="limit" class="help" hidden></p>
+      </section>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+    <footer>
+      <button id="retry" type="button">Retry / rescan</button
+      ><button id="settings" type="button" class="primary">Term settings</button>
+      <p>Integration preview · coverage depends on this player</p>
+    </footer>
   </body>
 </html>

@@ -45,6 +45,19 @@ async function buildExtension() {
     legalComments: 'eof',
     logLevel: 'info',
   });
+  await build({
+    absWorkingDir: root,
+    entryPoints: { content: 'src/content.ts', player: 'src/integration/crunchyroll.ts' },
+    outdir: output,
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: [`chrome${String(manifest.minimum_chrome_version).split('.')[0]}`],
+    sourcemap: false,
+    minify: false,
+    legalComments: 'eof',
+    logLevel: 'info',
+  });
   console.log(`Built ${manifest.name} ${metadata.version} in dist/.`);
 }
 

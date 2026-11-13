@@ -1,140 +1,104 @@
-# Chrome Extension Builder — Codex Cloud scaffold
+# QuietRoll
 
-**Describe the Chrome extension you want. Codex turns that description into a working, tested, installable extension.**
+A local Chrome Manifest V3 extension for English profanity filtering on Crunchyroll desktop. Includes a reference-style occurrence popup, literal term settings, caption parsing, and guarded player adapters. **Version 0.1.3 adds automatic track verification across autoplay and quieter loading notices. The updated behavior still needs a live check on the user's player.**
 
-This project supplies the build tools, agent instructions, tests, and packaging workflow. Codex chooses sensible defaults, implements the complete product, and asks questions only when the answer would materially change the result. You do not need to prepare a technical specification.
+The independent filtering engine and the unpacked extension are tested with synthetic player fixtures. The user reports audio filtering, the timestamp correction, and 0.1.2 subtitle filtering appear to work on real episodes, with periodic waiting notices and a manual menu read needed each episode. Their supplied player markup establishes a Bitmovin caption overlay; inspected public source establishes its track-menu semantics. This environment cannot reach Crunchyroll because its proxy rejects the connection, so it has not independently validated a real episode, either audio language, or a subscription session. The exact remaining assumptions are listed below.
 
-**Start with [START_HERE.md](START_HERE.md).** It explains the one-time project setup and provides the setup message to give Codex. The files are prepared; the GitHub repository and Codex Cloud environment still need to be created or connected in your account. After setup, your normal input is simply the extension idea.
+## Install
 
-**Page Notes is the included example extension.** It supplies implemented popup, storage, capture, and library workflows; a new extension request replaces the relevant demo features, branding, data model, and tests. Later requests revise your new product while preserving decisions that still apply.
+The release contains `dist/` and `artifacts/quietroll-0.1.3.zip` (manifest at ZIP root). To install without building:
 
-## Start in three steps
+1. Keep the extracted folder in a permanent location.
+2. Open `chrome://extensions` in Chrome 120 or newer and enable **Developer mode**.
+3. Select **Load unpacked**, then choose **`dist`** in this repository. If installing from the ZIP, extract it and select the directory containing `manifest.json` instead.
+4. Pin **QuietRoll**. Reload any already open Crunchyroll episode so its player starts with the extension.
+5. Open the popup and read both coverage statuses before playback. A warning also appears over an accessible player when coverage is unavailable. **There is no “fully filtered” label.**
 
-1. **Download and extract the scaffold.** Keep a clean copy for future extension projects.
-2. **Put it in your GitHub repository and select that repository in Codex Cloud.** Use Node.js 24 and configure the environment's install/setup command as shown below. See [Cloud setup](docs/CODEX_CLOUD.md) for the account and environment steps.
-3. **Describe your extension in a Codex task.** Use ordinary language. Codex reads `AGENTS.md`, records its working assumptions, builds the product, runs checks, and produces `dist/` plus an extension ZIP.
-
-Environment install/setup command, run from the repository root:
-
-```bash
-bash scripts/codex-setup.sh
-```
-
-On Linux, use `CODEX_INSTALL_SYSTEM_DEPS=1 bash scripts/codex-setup.sh` if the environment needs Playwright's OS packages and permits installing them. These scripts must be configured or run explicitly; Codex does not discover them automatically by filename.
-
-### Your first request
-
-```text
-Build a Chrome extension that [description]. Follow AGENTS.md. Choose
-sensible defaults, ask only questions that materially change behavior,
-and deliver a tested installable extension.
-```
-
-For example:
-
-```text
-Build a Chrome extension that closes duplicate tabs in my current window
-when I click a button. Keep one copy of each page and tell me how many
-were closed. Follow AGENTS.md and make sensible decisions for the rest.
-```
-
-```text
-Build a Chrome extension that lets me highlight text on a webpage and
-save it in a searchable reading list. It should work without an account.
-```
-
-```text
-Build a Chrome extension that helps me inspect a page's SEO title,
-meta description, heading structure, and image alt text.
-```
-
-You can also add preferences such as “use a side panel,” “only on my WordPress sites,” or “keep everything on this device.” If omitted, Codex decides what fits the goal. [More request examples](docs/FEATURE_REQUEST.md) are optional.
-
-### What Codex should deliver
-
-A working implementation of the requested features, appropriate permissions, useful error and empty states, updated tests and documentation, a loadable `dist/` folder, and `artifacts/<package-name>-<version>.zip`. It should explain any actual verification limit or integration requirement. The workflow is defined in [AGENTS.md](AGENTS.md); [PRODUCT.md](docs/PRODUCT.md) is maintained by Codex, not a form you must fill out.
-
-Codex owns implementation, testing, debugging, and packaging. `npm run release` runs the code checks and browser suite before creating the release ZIP. A failed gate stops that command; unresolved verification gaps must be reported explicitly. You review the result and install it in Chrome. Store submission is included when you request it and provide the necessary account access.
-
-## Try the included Page Notes demo
-
-The download includes a built `dist/` folder, so trying the demo does not require Node.js.
-
-1. Extract the project to a permanent folder.
-2. Open `chrome://extensions` in Google Chrome and enable **Developer mode**.
-3. Choose **Load unpacked**, select **`dist`**, and pin **Page Notes**.
-4. Visit an ordinary HTTP/S page, click the extension icon, write a note, and save it.
-
-Reopen the popup to edit or delete the page's note. Select text on the main page, open the popup, and request capture to save a quotation. The library/options page provides search, revisit, delete, JSON export/import, and confirmed bulk deletion.
-
-The demo stores data in the current Chrome profile with no account, backend, analytics, or runtime network calls. Local storage and exports are not encrypted by the extension. Uninstalling removes saved local notes; exported files remain wherever you saved them.
-
-Chrome protects internal browser pages and the Chrome Web Store from this capture flow. The demo captures the main document's selection, excluding form values and embedded frames. These are demo choices; a different product receives its own appropriate design.
-
-## Develop and verify locally
-
-Use Node.js **24**. From the repository root:
+For a source build, use Node.js 24 and npm 11:
 
 ```bash
+cd /workspace/chrome-extension-builder
 npm ci
-npm run check
 npx playwright install chromium
-npm run test:e2e
-npm run package
+npm run release
 ```
 
-On Linux, `npx playwright install --with-deps chromium` also installs required OS packages where permitted. The setup script runs installation and the non-browser checks; browser tests verify that the environment can actually launch Chromium.
+`npm run release` requires formatting, lint, strict TypeScript, unit tests, build/manifest validation, and the Chromium suite to pass before packaging. `npm run build` only creates `dist/`; `npm run package` only builds and packages. Neither alone proves live compatibility. In this cloud workspace, the installed browser cache is selected with:
 
-| Command            | Purpose                                                                   |
-| ------------------ | ------------------------------------------------------------------------- |
-| `npm ci`           | Install the committed dependency tree.                                    |
-| `npm run check`    | Check formatting, lint, types, unit tests, build, and output validation.  |
-| `npm run test:e2e` | Run integration tests against the built extension in Playwright Chromium. |
-| `npm run build`    | Build the loadable `dist/` directory.                                     |
-| `npm run dev`      | Rebuild source changes; extension reload remains manual.                  |
-| `npm run package`  | Build `artifacts/<package-name>-<version>.zip`.                           |
-| `npm run release`  | Require all code/browser checks to pass, then create the extension ZIP.   |
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release
+```
 
-After a rebuild, click **Reload** on the extension's card at `chrome://extensions`, then reopen its UI. The watch command does not provide browser hot reload. Before release, test the actual user interaction in Chrome; opening a popup URL directly does not verify a real toolbar `activeTab` grant.
+Use `npm run dev` for rebuilds, then **Reload** the extension in Chrome and reload the episode. No backend, API key, subscription to this extension, or store publication is involved.
 
-## Project map
+## Updating an existing installation
 
-| Location                | Purpose                                                           |
-| ----------------------- | ----------------------------------------------------------------- |
-| `AGENTS.md`             | The autonomous builder's operating instructions.                  |
-| `START_HERE.md`         | One-time setup and the setup message for Codex.                   |
-| `docs/PRODUCT.md`       | Codex-maintained purpose, decisions, and acceptance criteria.     |
-| `src/`                  | Product logic, UI, messages, storage, and capture code.           |
-| `public/`               | Manifest, packaged HTML/CSS, and icons.                           |
-| `extension.policy.json` | Explicit inventory of required/optional API and host permissions. |
-| `scripts/`              | Build, validation, packaging, and Cloud helpers.                  |
-| `tests/`                | Unit and browser tests for the current product.                   |
-| `dist/`                 | Generated extension loaded by Chrome.                             |
-| `artifacts/`            | Generated extension ZIPs.                                         |
+For 0.1.3, extract `artifacts/quietroll-0.1.3.zip`, then copy its contents into the **same folder you originally loaded into Chrome**, replacing the existing files. Open `chrome://extensions`, click **Reload** on QuietRoll, then reload the Crunchyroll episode page. Keeping the loaded folder preserves the extension ID and its local preferences/exceptions; do not remove the old extension or load a second copy from another folder.
 
-The default stack is strict TypeScript, native HTML/CSS, esbuild, Node's test runner, Playwright, ESLint, and Prettier. The demo targets Chrome 120+ and has no third-party runtime dependencies. Codex can change product-specific architecture when the requested functionality justifies it.
+**Bitmovin captions and autoplay:** choose **English [CC]** for an English dub, or **English** subtitles for Japanese audio, in Crunchyroll as usual. QuietRoll automatically opens the source-identified subtitle menu, reads its checked item and closes it; only the temporary popup it opens is concealed during that read. It never selects a language, turns subtitles on, or changes autoplay. A user-opened menu stays visible and open. This check repeats with fresh metadata for each episode instead of assuming the previous episode's language or cues apply. Play or seek to a caption: text status becomes **active** after the displayed text agrees with that episode's identified English track. If the bounded automatic read cannot verify the selection, it closes/restores its own menu and reports unavailable; open the menu yourself and use **Retry / rescan**. Ambiguous English variants and unrecognized/localized labels stay unfiltered. A very early caption can remain unfiltered while selection is still unresolved; the popup reports loading, never active. Live timing of that initial read remains unverified.
 
-## Reuse and release
+**Why the waiting message flashed in 0.1.2:** briefly empty/replaced caption elements and cue redraws could produce a loading state, which the large player banner displayed immediately. This was the extension's coverage notice, not a Crunchyroll error or proof by itself of a hardcoded subtitle. Version 0.1.3 retains verification across replacement of the same track's layer, allows a bounded redraw check and waits 1.5 seconds before displaying a continuous loading notice. Popup statuses remain immediate. Missing matching CC, unsupported rendering and persistent caption failures still produce player warnings; they are not hidden by settings. Transition metadata preparation has a seven-second bound and does not arm stale cues.
 
-Create one repository from a clean scaffold for each new extension. In an existing product, follow-up requests are revisions. For a new product, Codex should remove irrelevant demo code and update the name, icons, metadata, package filename, permissions, tests, README, architecture, and privacy copy together.
+The 0.1.1 timestamp fix routes navigation through the player's registered Media Session `seekto` handler when available, so the player can update its own controls and playback state. Native media seeking remains the fallback for players without a registered handler. QuietRoll waits for seek completion and does not call Play/Pause or change volume/mute choices. If the player explicitly disables or rejects seeking, the extension reports failure and does not bypass that decision with a raw video-time assignment.
 
-The ZIP is ready to load after extraction. Chrome Web Store publication additionally requires a developer account, listing materials, accurate disclosures, and review. See [RELEASE.md](docs/RELEASE.md). No open-source license has been assigned; choose one before distributing the source as an open-source template.
+## Use
 
-## Troubleshooting
+- **English audio:** leave language mode on Automatic. The observed episode-version metadata must identify English, and accessible English **dialogue/CC** from that same playback version must exist. English translations in the `subtitles` collection and signs-only subtitles do not drive dub muting. If detection is missing, explicitly choose **Manual: English audio** only when that is the actual audio; a matching CC track and a fresh media timeline are still required.
+- **Japanese audio:** choose Japanese audio and English subtitles in Crunchyroll. Identified English text can be censored in a supported renderer. Japanese audio is never muted, including when an English manual override conflicts with reliable Japanese metadata.
+- **Unknown or unsupported audio:** audio stays unchanged. The popup reports the unresolved/unsupported state. An override fills missing detection only; reliable detected metadata takes priority.
+- **Non-English subtitles:** always remain unchanged. SubtitlesOctopus selection uses the exact observed resource URL; the Bitmovin overlay uses the source-inspected subtitle menu's checked track label plus unambiguous current-version resource metadata. The website interface language and English-looking dialogue never establish language. A resource request alone is never treated as selected, because players can prefetch.
+- **Subtitles off:** audio filtering can continue if matching English CC data is accessible independently. QuietRoll does not turn subtitles on. If the data is not accessible, enable available English CC yourself and use Retry, or reload the episode with CC selected. There may simply be no CC for that dub.
+- **Occurrence review:** timestamps seek the current player without navigating/reloading the page. “Upcoming · detected” is a prediction; “Censored · audio/text” records an applied action in this playback session. Past detections with no applied action say “Detected · not censored”. Original terms and **all matching words in context** are masked until **Reveal originals** is checked, including ignored matches.
+- **Ignore/Unignore:** changes just the exact occurrence, identified by episode/version, track, original cue digest and position, and matched term digest. Another non-ignored match in the same cue still silences that whole cue. Changes recompute text and audio scheduling immediately.
+- **Term settings:** add one literal word/phrase per line; uncheck built-in terms you do not want. Save to update all active Crunchyroll tabs. Clear saved exceptions has an explicit confirmation. The term editor displays original terms; the popup defaults to masking.
 
-### Verification of this supplied scaffold
+## Timing, matching, and retention
 
-Formatting, ESLint, strict TypeScript, 37 unit tests, the production build, manifest/permission/CSP checks, and ZIP creation passed. The five Playwright extension scenarios are included but could not run in the generation workspace: its shell denies Chromium's local Unix sockets, and its managed browser blocks unpacked extension installation. This is a verification gap, not a passing browser result. Run `npm run test:e2e` in the configured Cloud environment, CI, or your local development environment, then complete the real toolbar interaction check before distributing the extension.
+The editable starter list is in `src/core/settings.ts`: ass, asshole/assholes, bastard/bastards, bitch/bitches, bullshit, crap, damn/damned, dick/dicks, fuck/fucked/fucker/fuckers/fucking, hell, motherfucker/motherfuckers, piss/pissed, shit/shits/shitty, and “son of a bitch”. These are opinionated defaults, not an exhaustive dictionary. There is no implicit stemming; add variants explicitly. Disable “hell” or “damn” if they are too broad.
 
-### Common issues
+Matching is case-insensitive, uses Unicode word boundaries, normalizes whitespace, full-width characters and curly apostrophes, and handles repeated matches. Punctuation in terms is literal; custom input is never a regular expression. “ass” does not match “class”. Apostrophes delimit words, so a base term can match before a possessive/contraction suffix. Longer phrases take precedence over overlapping shorter terms. Empty terms are rejected; equivalent terms are deduplicated.
 
-| Symptom                         | Check                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------ |
-| Chrome cannot find the manifest | Select `dist/`, not the source directory or ZIP.                                           |
-| Changes do not appear           | Wait for the build, reload the extension, and reopen its UI.                               |
-| Browser tests cannot launch     | Install the locked Playwright Chromium and required OS packages.                           |
-| Permission validation fails     | Review the manifest and `extension.policy.json`; update both for justified product access. |
-| Demo capture is empty           | Select text in the main page before invoking the toolbar action.                           |
-| Demo save reports a conflict    | Copy the unsaved draft, then reopen the note to load its latest revision.                  |
+The inspected caption contracts provide cue timing, **not word timestamps**. The extension silences each full matching cue, with default **80 ms lead-in / 100 ms trailing padding**, configurable from 0 to 300 ms each. Surrounding dialogue can also be silenced. It does not generate beeps or estimate word times. Scheduling uses media time, merges overlaps, and reevaluates after media events, seeks, replay, playback-rate changes, rule changes and Ignore/Unignore. Direct `video.muted` writes, including an explicit mute while extension muting is already active, preserve the user's intent; volume is never changed.
 
-References: [Codex Cloud](https://learn.chatgpt.com/docs/cloud), [AGENTS.md guidance](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Chrome extension loading](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world).
+Preferences, custom terms and up to 1,000 hashed occurrence exceptions use local extension storage. Complete subtitle tracks and occurrence/action logs stay in frame memory and are discarded with the page/session. The popup/action log is bounded to 1,000 entries; scheduling still considers all detected matches (up to 20,000). Track parsing is bounded to 3 MB, 12,000 cues per track, and 8,000 visible characters per cue; up to six English resources are preloaded. See [Privacy](docs/PRIVACY.md).
+
+## Coverage and open requirements
+
+| Area                                                                     | Implemented / fixture-tested                                                                                                                                                                 | Live Crunchyroll verification                                                                                  |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| English matching CC → whole-cue audio silencing                          | Yes: actual unpacked MV3 runtime and a real HTML media element playing a synthetic tone                                                                                                      | User reports working; independent verification **unavailable**                                                 |
+| Japanese audio + English subtitle censorship                             | Yes: no audio muting, even with a conflicting English override                                                                                                                               | **Unverified**                                                                                                 |
+| Missing CC / unknown audio / unsupported renderer                        | Truthful separate statuses, player warning, audio left unchanged where unavailable                                                                                                           | **Unverified**                                                                                                 |
+| Non-English subtitles                                                    | Exact observed resource language; originals untouched in the fixture                                                                                                                         | **Unverified**                                                                                                 |
+| ASS pre-render redaction and restoration                                 | Uses the recognized existing SubtitlesOctopus instance, original source tags, layout and cue times                                                                                           | Current constructor exposure and actual canvas output **unverified**                                           |
+| Identified Bitmovin DOM captions (WebVTT or ASS cue source)              | Filter the supplied overlay structure in the mutation microtask before browser paint; retain native nodes/styles and originals. Current English track selection and exact cues are required. | User reports 0.1.2 appears to work; updated verification **not live-tested**                                   |
+| Automatic selection / autoplay                                           | Three actual native-ended transitions on a synthetic site, fresh identities, English → Japanese → Spanish subtitles → English, no user menu opens; native preference/playback preserved      | Current service menu timing, popup ownership and actual autoplay **unverified**                                |
+| Popup/settings, persistence, exceptions, keyboard, tab and frame routing | Tested in Chromium with the built extension, including browser restart and cross-origin frame replacement                                                                                    | Actual user toolbar click and Chrome 120 baseline **unverified**                                               |
+| Fullscreen                                                               | Fixture player-container fullscreen works; no duplicate subtitle renderer is added                                                                                                           | Actual player fullscreen **unverified**; video-element-only fullscreen cannot contain an HTML coverage overlay |
+| Ads / episode and source changes                                         | Invalidate cues and release owned muting on observed playback requests, source reset, player replacement or navigation                                                                       | Same-source server-inserted ads / unannounced timeline remapping **not established**                           |
+
+**Universal English-audio censorship remains an unmet part of the broader goal.** Some English dubs have no matching CC. Translations of Japanese dialogue, signs tracks, other episode versions, unavailable resources, malformed/unsupported captions and unknown audio do not establish audio coverage. The warning is “Audio filtering unavailable”, with the reason; subtitle filtering can continue independently when genuinely supported. [Crunchyroll's supplied help link](https://help.crunchyroll.com/hc/en-us/articles/360037400412-Subtitles-are-not-showing-up-on-web) concerns caption availability; during this session it redirected to the help root rather than exposing the article text.
+
+The adapter currently requires these **unverified integration conditions**:
+
+1. The page uses the source-inspected `/playback/v4/<version>/web/(chrome|firefox)/play` response shape, with `captions` and `subtitles` records containing language, format and resource URL. It only observes page-initiated requests, not invented/authenticated endpoint calls.
+2. Episode metadata exposes `data[].id` and `episode_metadata.audio_locale` matching that playback version; otherwise audio detection remains unknown.
+3. English resources can be fetched with ordinary page-context CORS and no cookies. Fetch failure is reported, never worked around with extra privileged access or alternate versions. Preloading adds a bounded delay (up to the 5-second request timeout) before returning the page's playback response.
+4. Text censorship supports two guarded paths. SubtitlesOctopus must expose its documented constructor/lifecycle and an associated English `subUrl`; prepared ASS is supplied before construction/selection. The Bitmovin path requires the supplied `#player-container > .bitmovinplayer-container` hierarchy with its distinct `div > div > ul` caption overlay, the source-inspected `audio-text-track-menu`/toggle and checked radio labels, one unambiguous English resource, and exact displayed/current cue agreement apart from whitespace. Automatic inspection needs that menu to expose a checked item within two seconds and to close normally; a failed close restores visibility within a further 500 ms. Other open controls defer inspection, and real pointer/keyboard input cancels it. Caption text nodes are changed in the DOM mutation microtask before paint, with inline elements, layout and original text retained. No replacement layer, global DOM rewrite or network response substitution is used. Different markup, unknown labels, unmatched cues, canvas-only output, native browser text tracks and hardcoded subtitles remain unsupported. An empty overlay cannot establish coverage: it waits for a real cue and reports unavailable if a known cue remains absent. Actual Bitmovin cue markup, menu timing, labels and before-paint behavior remain live-unverified.
+5. The top page and the known `static.crunchyroll.com/vilos-v2/web/vilos/player.html` frame exchange current metadata before the renderer starts. Both execution contexts are explicitly handled. Other frame locations are not guessed.
+6. A fresh media timeline can be associated with the observed playback. Source/ad changes without fresh playback metadata fail closed until a reload. Browser timer throttling and same-source ad insertion still require live validation; millisecond precision is not guaranteed by a fixture test.
+
+No DRM, subscription, sign-in, media extraction, authentication token capture, cloud transcription, microphone access, speech-recognition fallback, backend, analytics or store publication was added. The supplied reference repository was read and never modified.
+
+## Verification and manual checklist
+
+See [Release verification](docs/RELEASE.md) for actual commands, results and screenshot paths. Synthetic fixtures are only under `tests/fixtures/`; they are never production data or packaged assets.
+
+For an authorized live browser check:
+
+1. Load `dist/`, reload Crunchyroll, open a playable English dub with English CC. Without opening the menu, check that QuietRoll identifies the selected track automatically. At a known cue, verify only matched words become `****`, audio is silenced, and no uncensored layer or warning flashes appear. Leave Crunchyroll's autoplay enabled and watch through at least two episode transitions: no manual menu action should be needed, identities/timings must change and actual playback must keep progressing. Test subtitles off with accessible CC. If automatic verification fails, confirm English [CC] in the native menu and Retry; do not assume coverage before the popup says active.
+2. Switch to Japanese audio + English subtitles. Verify text filtering and **unchanged Japanese audio**. Set the conflicting English override and verify reliable Japanese metadata still wins. Switch to Spanish/another non-English subtitle and verify every original word remains unchanged.
+3. Play an English dub without CC. Expect an in-player and popup **Audio filtering unavailable** warning. Ensure English translation/signs timing never mutes the dub. Repeat with unknown languages and an unsupported/hardcoded renderer.
+4. Ignore one of two matches in a cue; only that word returns and the other still requires whole-cue silence. Ignore both, Unignore one, seek via the timestamp, replay, pause, buffer, use different playback rates, and edit terms during a paused cue. Disable filtering and verify original subtitles and the user's volume/mute choice return.
+5. Test the actual toolbar popup, keyboard focus, fullscreen container, episode navigation, audio/subtitle track switching, autoplay and multiple tabs. Open the native menu yourself and ensure the extension leaves it open/visible; verify a new episode with non-English subtitles or subtitles off is not switched to English. A saved exception must not affect another episode/version/track. Restart Chrome to check settings and exceptions. Clear exceptions in options and verify active tabs update.
+6. Exercise any ads and same-source discontinuities on the account/region being tested. Do not declare that path covered until its timeline mapping and ad boundaries have been observed. Record renderer/format and cue availability without copying cookies, tokens, signed URLs or subtitle tracks into logs.

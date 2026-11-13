@@ -1,78 +1,86 @@
-# Build and release the current product
+# QuietRoll release verification
 
-For a new extension request, Codex performs the build and verification work in [AGENTS.md](../AGENTS.md) and updates this checklist for the chosen product. The user can start with a short description; this document is not a specification they must complete.
+## Reproduce
 
-## 1. Prepare the source
+Use Node 24, npm 11, and the committed lockfile. `npm ci`; `npx playwright install chromium`; `npm run release`. The cloud image has its browser binaries in `/workspace/.cache/ms-playwright`, so the executed release command is `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release`.
 
-- Set the intended product name, version, description, and icons in the source metadata.
-- Keep the package and manifest version consistent through the project's build conventions.
-- Choose a license before making the source an open-source template; this scaffold does not assign one.
-- Update the README, privacy policy, and any user-facing explanation for changed behavior.
-- Review requested permissions against implemented features.
-- Match `extension.policy.json` to required/optional API and host permissions in the manifest.
-- Remove obsolete demo branding, feature code, UI, privacy claims, and tests when building another product.
+The Browser plugin is not available. Shared Chrome/CUA startup was attempted: tab creation failed with “Browser Use could not read requirements”, and native Sky input failed because the Chrome AT-SPI provider was unavailable. The repository's regular Playwright workflow is used instead. It loads the actual unpacked bundle in Chromium; `chrome.*` APIs are not mocked and test-only host access is not added to the release manifest.
 
-Chrome requires an increasing version for store updates. The manifest description must be no longer than 132 characters. See [Chrome's preparation guide](https://developer.chrome.com/docs/webstore/prepare).
+## Scope of evidence
 
-## 2. Run the verification gates
+Fixtures intercept HTTPS responses on the narrowly permitted Crunchyroll origins. They supply synthetic ASS/WebVTT, episode language metadata and a small simulation of the documented SubtitlesOctopus API. A real media element plays a generated local tone to exercise actual mute control and seeking. The fake renderer is **not** Crunchyroll or a real libass canvas. These fixtures are never used by production code or packaged.
 
-From a clean checkout with Node.js 24:
+The browser checks cover English CC, Japanese audio with English subtitles, ignored multiple matches in a cue, Unignore, timestamp seeking without reload, disable/restore, reveal masking, settings and exception persistence through browser restart, clearing exceptions, keyboard focus, narrow layout, unsupported/non-English paths, missing CC, unknown audio, captions off, a fullscreen container, source-reset ads, separate tabs, stale actions and cross-origin frame replacement. The pure tests additionally exercise literal matching, parser preservation, interval merging, replay, seeking, buffering/pausing, playback rates and manual mute ownership.
 
-```bash
-npm ci
-npm run check
-npx playwright install chromium
-npm run test:e2e
-npm run package
-```
+## QA record
 
-Use `npx playwright install --with-deps chromium` when a Linux environment also needs OS packages. Do not mark browser checks successful if the browser could not launch.
+Final command results, Chromium version and artifact inventory are recorded in PRODUCT.md after the release gate. Screenshots are saved outside the repository at `/tmp/quietroll-popup.png`, `/tmp/quietroll-options-desktop.png`, and `/tmp/quietroll-options-narrow.png`. They show synthetic data only. Checks include page identity, meaningful content, absence of framework/error overlays, relevant console errors, rendered screenshots and actual control interactions.
 
-The loadable extension is `dist/`. The extension-only archive is `artifacts/<package-name>-<version>.zip`, derived from the current package metadata. `manifest.json` must be at the ZIP root; do not upload the full scaffold/source archive to the store.
+Live Crunchyroll validation is **unverified**. The environment's proxy returned `CONNECT tunnel failed, response 403` for `https://www.crunchyroll.com`; a public lookup of the known static player returned 502. This is a network/access blocker, not evidence of a site bot challenge or that Crunchyroll is down. No real episode audio was tested, and no account authentication was attempted. The user-facing manual checklist and precise unverified integration contracts are in README.md.
 
-## 3. Test the product in Chrome
+## Release assets
 
-Load `dist/` at `chrome://extensions` with Developer mode enabled. Use a separate test profile with fixture data when possible.
+`dist/` is the unpacked extension. `artifacts/quietroll-0.1.3.zip` contains only the production manifest, HTML/CSS, locally bundled JavaScript, and icons, with `manifest.json` at its root. A SHA-256 sidecar is generated. `scripts/validate.mjs` enforces MV3, the reviewed permission inventory, restrictive CSP, local executable resources and no eval/remote imports. Production source and assets, not `dist/`, are edited.
 
-Verify the primary user workflow and acceptance criteria in [PRODUCT.md](PRODUCT.md), along with relevant failure states, site/permission scope, persistence, keyboard interaction, narrow widths, and reload behavior. If the product connects to an external service, verify actual integration when access is available and clearly identify any unverified service behavior.
+Passing this gate packages an integration preview. It does not close missing-caption coverage, prove current Crunchyroll selectors/contracts, establish actual canvas output, cover same-source ads, or verify an actual toolbar click in Google Chrome. No store publication is authorized or performed.
 
-### Included demo checklist
+## 0.1.0 executed results
 
-The following checks apply to Page Notes. Codex replaces them with the requested product's checks on the first build:
+`PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release` passed with **20 unit tests and 7 Chromium browser scenarios**, no failures or skips. Browser version: **158.0.8127.18**. The final browser suite completed in **34.7 seconds**. Package: **46,968 bytes / 13 files**, SHA-256 `a767700df4e6b47bda1fe586d5a3d89940b012d79030cb6737e40de76572154d`. A separate archive inspection verified root manifest, exact distribution contents, permission inventory, no fixtures, all icon dimensions and checksum.
 
-- Invoke the toolbar action on an ordinary HTTP/S page; save, close, reopen, edit, and delete a note.
-- Select text on the main page, request capture, and verify that the stored quotation matches.
-- Verify empty selection and unsupported/protected-page feedback.
-- Open the library, search long titles/text, revisit a page, and delete an entry.
-- Export fixture notes, import them into a clean test profile, and check the merge result.
-- Try an invalid JSON/schema import and confirm existing records remain unchanged.
-- Cancel bulk deletion, verify no change, then confirm deletion using fixture records.
-- Reload the extension and confirm saved data survives. Check an edit conflict from two open UI contexts.
-- Navigate the popup and library by keyboard; check labels, visible focus, text wrapping, and narrow widths.
-- Inspect the extension's error list and service-worker console after these flows.
+| QA check                                          | Result and scope                                                                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Page identity / meaningful content                | Pass: packaged popup/options and labeled synthetic player surfaces                                                         |
+| Framework/error overlay                           | Pass: no framework; no error overlay observed                                                                              |
+| Console/page health                               | Pass: relevant errors empty in all seven browser scenarios                                                                 |
+| Screenshots                                       | Pass: popup occurrence review, desktop options and narrow options saved at the paths above                                 |
+| Interaction proof                                 | Pass: real extension messaging/storage, real media control, renderer-contract simulation, keyboard and persistence actions |
+| Current live service                              | **Unverified:** inherited-proxy browser request failed with `ERR_TUNNEL_CONNECTION_FAILED`; curl CONNECT returned 403      |
+| Actual Google Chrome toolbar gesture / Chrome 120 | **Unverified:** tests opened extension pages directly and do not claim a physical toolbar gesture                          |
 
-Automated tests may open extension pages directly or use test-only permission fixtures. That does not prove a toolbar action grants `activeTab` correctly; a real interaction check covers that boundary for products using this permission.
+The flow under test was: synthetic Crunchyroll-origin watch page → page's own metadata requests → prepared English cues → actual media controls and occurrence popup → Ignore/Unignore, seeking, settings updates and restoration. The cross-origin test also relayed metadata into the known Vilos-frame origin and rejected stale document actions after replacement. No live service behavior is inferred from those results.
 
-## 4. Inspect the release artifact
+## 0.1.1 timestamp-seek regression
 
-Confirm the ZIP contains only required runtime files. It must not contain source maps with private source, test manifests, test-only permissions, local exports, environment files, browser profiles, credentials, or development dependencies.
+The flow under test is: paused synthetic episode → popup timestamp → site Play/video click → playback progresses without moving the timeline. A second case seeks during ongoing playback and verifies it keeps progressing. Native fallback is also exercised in the original top-frame and cross-origin frame tests. Browser plugin not available; the existing Chromium Playwright workflow is used.
 
-Check that all scripts, styles, icons, and HTML referenced by the manifest are present and load locally. No executable code may be fetched remotely. Keep a copy of the reviewed source revision, package lock, verification results, and release ZIP together in your normal release records.
+The new stateful-player fixture models the user's failure: a direct `currentTime` write moves the clock but leaves SDK controls out of sync; using the fixture timeline restores them. The regression checks this negative control, then verifies extension timestamps use the registered `seekto` action, leave paused playback paused until Play, and keep playing playback moving. This is a deterministic simulation, not a new live Crunchyroll validation. Screenshot: `/tmp/quietroll-seek-resume.png`.
 
-## 5. Prepare the Chrome Web Store listing
+A fresh live-service probe again failed with `ERR_TUNNEL_CONNECTION_FAILED`. Exact confirmation of the fix on the user's player remains a manual check after updating and reloading the extension and episode. No subtitle rendering coverage changed.
 
-1. Register or use your Chrome Web Store developer account and complete its current account requirements.
-2. Complete the extension's name, summary, detailed purpose, category, language, and support/contact information.
-3. Supply the required icons, screenshots, and promotional assets using the dashboard's current specifications.
-4. Publish the completed [privacy policy](PRIVACY.md) at an accessible public URL and enter it in the dashboard.
-5. Explain the single purpose and why each permission is required.
-6. Complete data-use disclosures for the actual product. The included demo handles page URLs, titles, notes, and selected text locally; a different extension may handle or transmit different information.
-7. Upload the extension-only ZIP, review the resulting metadata, and submit when ready.
+The 0.1.1 full release gate passed: **25 unit tests / 9 Chromium scenarios**, no skips, browser suite **51.4 seconds**, with formatting/lint/types/manifest checks and packaging passing. The long combined occurrence/settings flow was split into two focused scenarios while retaining its checks after a per-test timeout. Archive: `artifacts/quietroll-0.1.1.zip`, **48,220 bytes / 13 production files**. SHA-256: `c7c26768ec53c286b7997166bb9f35487496aa03e2ed930e8f3626127037cd0a`. Inspection confirmed exact ZIP/dist equality, correct root manifest, unchanged API/host permissions, CSP and injection declarations, no fixtures, and checksum validity.
 
-Publication is a separate account action. Passing project checks or creating a valid ZIP does not guarantee store approval. Review the [store preparation guide](https://developer.chrome.com/docs/webstore/prepare), [privacy rules](https://developer.chrome.com/docs/webstore/program-policies/privacy), and [program policies](https://developer.chrome.com/docs/webstore/program-policies/policies) against the final product.
+Page identity, meaningful UI, no framework overlay, console/page health and the new seek/resume interaction passed on the synthetic fixture. The screenshot captures the labeled fixture with SDK controls “In sync” and an incremented seek counter; advancing media time was asserted independently. Live-service validation is still blocked by the proxy. Browser plugin not available; the repository Playwright tooling was used.
 
-## Updates and recovery
+## 0.1.2 Bitmovin DOM caption regression
 
-Ship schema changes with tested migrations and preserve users' existing data. Keep an appropriate backup during upgrade tests. If a release needs a code rollback, prepare a corrected build with a new, higher version; do not assume the store will accept a lower version or that older code can read a newer data schema.
+The supplied real player hierarchy and public source-inspected track-menu semantics are reproduced structurally in `tests/fixtures/bitmovin.html`. Its synthetic renderer is not Bitmovin. It repeatedly overwrites caption text on animation frames; the actual unpacked extension must censor it within the mutation checkpoint. Thirty rendered-frame samples are required to contain only the expected replacement. Text split across inline elements, real line breaks, source restoration, immediate Ignore/Unignore/rule changes and style preservation are checked.
 
-Uninstalling is not a data-preserving recovery step: it removes extension-local storage. Document any support recovery procedure before instructing users to remove the extension.
+Four new browser scenarios additionally cover Japanese audio, conflicting audio override, keyboard subtitle choice, identical dialogue under Spanish metadata remaining unchanged, captions off, layer replacement, player-container fullscreen, prefetched resources not selecting a language, mismatched cues/changed structure and empty/hardcoded coverage warnings. Switching audio/version invalidates old occurrence exceptions. The original nine scenarios, including timestamp/Play regression and frame/tab routing, remain intact. Three pure cases cover unique label/locale/role binding, cross-node offset projection, VTT policy changes and accurate applied-action logging.
+
+Browser plugin absent; the existing Chromium Playwright workflow is used. Screenshot `/tmp/quietroll-bitmovin-fullscreen.png` was visually inspected: one caption layer with filtered text, preserved inline styling and no clipping in the fixture fullscreen container. Console/page errors are asserted empty. A fresh normal proxy connection to Crunchyroll still failed with CONNECT 403, so live dynamic cue markup, selected menu labels and actual Bitmovin before-paint behavior remain unverified. User-reported audio/seek success is recorded separately from independent checks.
+
+Final command `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release` passed: **28 unit tests / 13 browser scenarios**, no skips, **1.4 minutes** for the full browser suite, plus formatting/lint/types/build/manifest validation and packaging. Installed binary reports **Google Chrome for Testing 158.0.8127.18**. This includes the original stateful timestamp/Play regression unchanged. A test-only options-status selector typo was corrected during focused verification; the final release gate passed without retries.
+
+Package `artifacts/quietroll-0.1.2.zip`: **52,736 bytes / 13 production files**, SHA-256 `b9cda083d42fd4328927156d6a8930cad1260240296ed202e1c81829ed77ed69`. Independent archive inspection verified exact byte equality with `dist/`, root version/MV3 manifest, unchanged permission/host/CSP/injection declarations against 0.1.1, icon dimensions, no fixture/attachment/test files and the checksum. No additional publication or external transmission occurred.
+
+## 0.1.3 autoplay and notice regression
+
+Flow under test: loaded synthetic episode → native media-ended event → fixture site's own autoplay → fresh episode/version metadata and selected track → filtering reattaches without a manual subtitle menu action. Three transitions cover Japanese audio, a Spanish track with deliberately identical English-looking text, and English again. They verify ongoing playback, unchanged volume, fresh exceptions and zero user menu opens. A navigation-poll regression ensures new metadata is retained after the URL changes. Only the fixture site calls Play for autoplay; extension menu inspection calls no playback controls.
+
+The real unpacked extension also samples 240 animation frames under repeated 400 ms caption-layer replacement/empty bursts: no warning or uncensored-caption flashes are permitted. A separate 180-frame capture observes a deliberately unresolved automatic menu: it must be mounted but never visibly painted, close at timeout, preserve focus, restore native visibility and leave a subsequently user-opened menu untouched. Delayed selection metadata, broken menus and normal keyboard language changes are exercised. Pure cases test notice delay/recovery, immediate missing-caption/error disclosure, and full snapshots with null metadata.
+
+Browser plugin not available; the repository's Chromium/Playwright workflow is used, at 1100×850. Page identity, meaningful fixture and extension UI, no framework overlays, empty relevant console/page errors, screenshot evidence and the actual interactions are checked. Screenshots `/tmp/quietroll-autoplay.png` and `/tmp/quietroll-quiet-redraw.png` were visually inspected: labeled synthetic data, filtered captions, no open automatic popup, and no coverage warning in the healthy state. These are fixture checks, not an authenticated live Crunchyroll test. Current-service autoplay/menu timing and Google Chrome's physical toolbar flow remain unverified.
+
+The full release command `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release` passed: **31 unit tests / 16 browser scenarios**, no failures/skips/retries, **1.7 minutes** for the browser suite, plus format/lint/types/build/permission validation and packaging. Browser binary: **Google Chrome for Testing 158.0.8127.18**, headless. A fresh ordinary proxy connection to Crunchyroll again returned CONNECT 403. No live service success is claimed.
+
+| Check                                | Result                                                                                                                                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page identity and meaningful content | Pass: actual packaged extension and labeled synthetic player                                                                                                                           |
+| Error/framework overlay              | Pass: none observed                                                                                                                                                                    |
+| Console/page health                  | Pass: relevant errors empty in all scenarios                                                                                                                                           |
+| Screenshot evidence                  | Pass: final autoplay/quiet-redraw images inspected                                                                                                                                     |
+| Interaction                          | Pass: three native-ended transitions, current selection, fresh exceptions, 240 redraw frames, 180 concealed-menu frames, preserved focus and user-opened menu, disable/re-enable retry |
+| Current live service                 | Unverified: proxy CONNECT 403; requires checking current player menu behavior and real episode transitions                                                                             |
+
+Package `artifacts/quietroll-0.1.3.zip`: **54,537 bytes / 13 production files**, SHA-256 `21499e6f5babc5e64e41cc258bb6534a0b11f188a377ac3515d162e496dd6560`. Archive inspection verified exact byte equality with `dist/`, root MV3/version manifest, updated options version, unchanged permissions/hosts/CSP/injection against 0.1.2, all icon dimensions, no tests/private attachments and checksum validity. No publication or additional data transmission was performed.

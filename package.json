@@ -1,7 +1,7 @@
 {
-  "name": "page-notes",
-  "version": "1.0.0",
-  "description": "A minimal-permission Chrome Manifest V3 starter with a working Page Notes extension and Codex Cloud workflow.",
+  "name": "quietroll",
+  "version": "0.1.3",
+  "description": "Local, caption-timed English profanity filtering for supported Crunchyroll players.",
   "private": true,
   "type": "module",
   "license": "UNLICENSED",

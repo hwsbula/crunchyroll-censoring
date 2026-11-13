@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>QuietRoll synthetic Bitmovin overlay</title>
+    <style>
+      body {
+        margin: 24px;
+        font: 16px system-ui;
+        background: #eee;
+      }
+      button {
+        padding: 8px;
+        margin: 4px;
+      }
+      #player-container {
+        position: relative;
+        width: 900px;
+        height: 460px;
+        background: #141b23;
+        color: white;
+      }
+      video {
+        width: 100%;
+        height: 100%;
+      }
+      [data-testid='player-controls-root'] {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        z-index: 2;
+      }
+      [data-testid='audio-text-track-menu'] {
+        display: flex;
+        gap: 12px;
+        background: #222;
+        padding: 12px;
+      }
+      [role='menuitemradio'] {
+        padding: 8px;
+        cursor: pointer;
+      }
+      [aria-checked='true'] {
+        outline: 2px solid orange;
+      }
+    </style>
+    <script src="/fixture-bitmovin.js" defer></script>
+  </head>
+  <body>
+    <h1>Synthetic Bitmovin caption overlay — not a live episode</h1>
+    <p>
+      Sanitized structural fixture based on supplied player markup and inspected track-menu
+      semantics.
+    </p>
+    <button id="english">Load English CC</button
+    ><button id="japanese">Load Japanese + English subtitles</button> <button id="play">Play</button
+    ><button id="fullscreen">Fullscreen</button>
+    <button id="prefetch">Prefetch another track</button
+    ><button id="mismatch">Toggle mismatched text</button>
+    <button id="empty">Toggle empty caption layer</button
+    ><button id="replace-layer">Replace caption layer</button>
+    <button id="transients">Start short empty/redraw bursts</button>
+    <label><input id="autoplay" type="checkbox" /> Synthetic autoplay</label>
+    <label
+      >Next audio
+      <select id="next-audio">
+        <option value="english">English</option>
+        <option value="japanese">Japanese</option>
+      </select></label
+    >
+    <label
+      >Next subtitles
+      <select id="next-subtitle">
+        <option value="english">English</option>
+        <option value="spanish">Spanish</option>
+        <option value="off">Off</option>
+      </select></label
+    >
+    <p>
+      Episode sequence: <span id="sequence">0</span>; automatic menu reads:
+      <span id="menu-reads">0</span>; user menu opens: <span id="manual-menus">0</span>; selected:
+      <span id="chosen-subtitle"></span>
+    </p>
+    <p id="fixture-state">Not loaded</p>
+    <p id="unrelated">Unrelated damn title and shit description remain unchanged.</p>
+    <div id="player-container" class="player-container" aria-label="Video Player">
+      <div
+        class="bitmovinplayer-container"
+        style="position: absolute; inset: 0; width: 100%; height: 100%"
+      >
+        <video playsinline></video>
+        <div class="bitmovinplayer-poster"></div>
+        <div
+          style="
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+          "
+        >
+          <div
+            style="
+              position: absolute;
+              left: 5%;
+              top: 5%;
+              width: 90%;
+              height: 90%;
+              text-align: center;
+              line-height: normal;
+              font-family: sans-serif;
+              color: white;
+              font-size: 28px;
+            "
+          >
+            <ul
+              style="
+                position: absolute;
+                bottom: 0;
+                width: 100%;
+                margin: 0 0 10px;
+                padding: 0;
+                list-style: none;
+                font-family: Lato, sans-serif;
+                color: white;
+              "
+            ></ul>
+          </div>
+        </div>
+      </div>
+      <div data-testid="player-controls-root">
+        <button
+          data-testid="track-selection-button"
+          aria-label="Audio and subtitle language options"
+          aria-expanded="false"
+        >
+          Audio and subtitles
+        </button>
+      </div>
+    </div>
+  </body>
+</html>
