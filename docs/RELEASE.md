@@ -1,4 +1,4 @@
-# QuietRoll release verification
+# CrunchyRoll Censoring release verification
 
 ## Reproduce
 
@@ -20,7 +20,7 @@ Live Crunchyroll validation is **unverified**. The environment's proxy returned 
 
 ## Release assets
 
-`dist/` is the unpacked extension. `artifacts/quietroll-0.1.3.zip` contains only the production manifest, HTML/CSS, locally bundled JavaScript, and icons, with `manifest.json` at its root. A SHA-256 sidecar is generated. `scripts/validate.mjs` enforces MV3, the reviewed permission inventory, restrictive CSP, local executable resources and no eval/remote imports. Production source and assets, not `dist/`, are edited.
+`dist/` is the unpacked extension. `artifacts/crunchyroll-censoring-0.1.4.zip` contains only the production manifest, HTML/CSS, locally bundled JavaScript, and icons, with `manifest.json` at its root. A SHA-256 sidecar is generated. `scripts/validate.mjs` enforces MV3, the reviewed permission inventory, restrictive CSP, local executable resources and no eval/remote imports. Production source and assets, not `dist/`, are edited.
 
 Passing this gate packages an integration preview. It does not close missing-caption coverage, prove current Crunchyroll selectors/contracts, establish actual canvas output, cover same-source ads, or verify an actual toolbar click in Google Chrome. No store publication is authorized or performed.
 
@@ -84,3 +84,7 @@ The full release command `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwrig
 | Current live service                 | Unverified: proxy CONNECT 403; requires checking current player menu behavior and real episode transitions                                                                             |
 
 Package `artifacts/quietroll-0.1.3.zip`: **54,537 bytes / 13 production files**, SHA-256 `21499e6f5babc5e64e41cc258bb6534a0b11f188a377ac3515d162e496dd6560`. Archive inspection verified exact byte equality with `dist/`, root MV3/version manifest, updated options version, unchanged permissions/hosts/CSP/injection against 0.1.2, all icon dimensions, no tests/private attachments and checksum validity. No publication or additional data transmission was performed.
+
+## 0.1.4 rename verification
+
+The rename release gate passed: `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release`, **31 unit tests and 16 browser fixture scenarios**, no failures/skips, browser suite **1.7 minutes**. Popup and narrow options screenshots were visually inspected with the full new name and no header overflow. Archive inspection confirmed 13 production files, the new manifest/action/UI titles, version 0.1.4, unchanged permissions and byte-identical JavaScript/CSS/icons against 0.1.3. Package: `artifacts/crunchyroll-censoring-0.1.4.zip` (54,556 bytes), SHA-256 `2916b47dab07d510f8bd9aeafa6ff465ea820152f246726d5d5d14ff5314aa0c`. The downloadable source is `artifacts/crunchyroll-censoring-source-with-git.zip`; it includes the renamed source and Git history on main, with no remote configured. Existing live-service limitations remain unchanged.

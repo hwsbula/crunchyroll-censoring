@@ -6,7 +6,7 @@ Set up the repository and reusable environment once using [START_HERE.md](../STA
 
 Use a GitHub repository for the source, a reusable cloud environment for the toolchain, and local Chrome for a final interaction check. Once setup is complete, describe the extension in ordinary language. Codex implements, tests, builds, and packages it remotely; you load the resulting `dist/` folder in Chrome.
 
-The current product is QuietRoll, an integration preview with documented live-service verification gaps. Its source, UI, permissions, tests and release package replace the original demonstration. No planning approval is required for routine revisions. [AGENTS.md](../AGENTS.md) is the operating guide; Codex maintains [PRODUCT.md](PRODUCT.md) from your request.
+The current product is CrunchyRoll Censoring, an integration preview with documented live-service verification gaps. Its source, UI, permissions, tests and release package replace the original demonstration. No planning approval is required for routine revisions. [AGENTS.md](../AGENTS.md) is the operating guide; Codex maintains [PRODUCT.md](PRODUCT.md) from your request.
 
 Current [Cloud environment guidance](https://learn.chatgpt.com/docs/environments/cloud-environments) describes reusable published environments. From a new task, choose **Work in > Cloud > Select environment > Create environment**, select the repository, and choose **Get started**. Codex can prepare the environment from a conversational setup request. The tested setup can be recorded in **Install script** and **Start skill** fields.
 

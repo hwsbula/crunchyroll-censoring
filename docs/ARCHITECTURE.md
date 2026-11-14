@@ -1,4 +1,4 @@
-# QuietRoll architecture
+# CrunchyRoll Censoring architecture
 
 ## Boundaries
 

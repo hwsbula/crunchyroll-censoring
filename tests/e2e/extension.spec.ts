@@ -213,7 +213,7 @@ test('unpacked popup has truthful empty states; settings persist through popup a
   const directory = extension.directory;
   try {
     const popup = await openPopup(extension.context, extension.worker, extension.id);
-    await expect(popup).toHaveTitle('QuietRoll');
+    await expect(popup).toHaveTitle('CrunchyRoll Censoring');
     await expect(popup.locator('#status')).toContainText(/active Crunchyroll|No active|accessible/);
     await expect(popup.locator('#audio-reason')).toContainText('Audio filtering unavailable');
     const options = await extension.context.newPage();

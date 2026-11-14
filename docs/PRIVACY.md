@@ -1,6 +1,6 @@
-# QuietRoll privacy
+# CrunchyRoll Censoring privacy
 
-QuietRoll has no analytics, backend, account, paid API, telemetry or cloud transcription. Custom terms, captions and occurrence content are processed locally. It never records a microphone, captures protected media, extracts DRM content, reads authentication headers/cookies/access tokens, or changes subscriptions/authentication.
+CrunchyRoll Censoring has no analytics, backend, account, paid API, telemetry or cloud transcription. Custom terms, captions and occurrence content are processed locally. It never records a microphone, captures protected media, extracts DRM content, reads authentication headers/cookies/access tokens, or changes subscriptions/authentication.
 
 It observes the current player's own playback/episode metadata and reads the English caption resource URLs already supplied by that player, using ordinary page-context HTTPS/CORS requests with `credentials: omit`. These are requests for caption text, not transmission of terms, logs or transcripts. No credentials are copied into extension code. Failed access is reported, not bypassed. Executable extension code is packaged locally; the site's existing subtitle renderer remains the site's code.
 
@@ -19,3 +19,5 @@ Version 0.1.1 keeps the current page's registered Media Session seek callback an
 Version 0.1.2 also reads the identified player's selected subtitle-menu label and its caption overlay text. It keeps original strings for at most 512 current overlay nodes/32,000 characters in page memory to restore text and apply occurrence exceptions. Removed nodes, track changes and page closure release this data. It does not rewrite other page text or retain menu choices as viewing history. The supplied diagnostic DOM was inspected locally; neither the complete paste nor any real transcript is bundled as a test fixture. No data export, new transmission, permission or host access was added.
 
 Version 0.1.3 automates that menu read on each episode. It keeps the current toggle/popup references, original inline visibility styles and focus reference only while the bounded local check runs. It reads the checked subtitle label and closes only its own temporary menu; it does not select a language, change autoplay, or save/infer a cross-episode subtitle preference. It restores styles and releases observers/timers on completion, cancellation, failure and teardown. Warning presentation keeps only two short-lived loading timestamps in frame memory. No new storage data, network request, host access or Chrome permission was introduced.
+
+The 0.1.4 rename retains the legacy `quietroll.v1` storage key and internal message/registry identifiers. Updating the same installed folder preserves the extension ID, saved preferences and occurrence exceptions. The rename adds no data collection or permissions.

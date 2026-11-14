@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "QuietRoll",
-  "version": "0.1.3",
+  "name": "CrunchyRoll Censoring",
+  "version": "0.1.4",
   "description": "Filter English profanity in supported Crunchyroll captions and matching English-dub CC audio. Coverage varies by player and episode.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
@@ -11,7 +11,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "QuietRoll",
+    "default_title": "CrunchyRoll Censoring",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
