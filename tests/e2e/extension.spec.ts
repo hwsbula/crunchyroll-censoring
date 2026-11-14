@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { RoutedPlayer } from '../../src/shared/protocol.ts';
+import type { SavedState } from '../../src/core/types.ts';
+import { BUILTINS } from '../../src/core/terms.ts';
 
 // Browser plugin not available. These tests load the actual unpacked MV3 bundle
 // in Chromium. Host responses are intercepted synthetic fixtures, not live CR.
@@ -240,6 +242,155 @@ test('unpacked popup has truthful empty states; settings persist through popup a
     await reopened.goto(`chrome-extension://${extension.id}/options.html`);
     await expect(reopened.locator('#custom')).toHaveValue('space wizard\nliteral.*term');
     await expect(reopened.getByLabel('hell', { exact: true })).not.toBeChecked();
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('expanded term settings search, keyboard, all-category disabling and legacy data persist', async () => {
+  let extension = await launch();
+  const directory = extension.directory;
+  const exception = `${'a'.repeat(64)}.${'b'.repeat(64)}.0.4.${'c'.repeat(64)}`;
+  try {
+    await extension.worker.evaluate(async (exception) => {
+      await chrome.storage.local.set({
+        'quietroll.v1': {
+          version: 1,
+          revision: 4,
+          settings: {
+            enabled: true,
+            mode: 'auto',
+            reveal: false,
+            beforeMs: 80,
+            afterMs: 100,
+            custom: ['space wizard'],
+            disabledBuiltins: ['hell'],
+          },
+          exceptions: [exception],
+        },
+      });
+    }, exception);
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(options.locator('#save')).toBeEnabled();
+    await expect(options.getByLabel('hell', { exact: true })).not.toBeChecked();
+    await expect(options.getByLabel('idiot', { exact: true })).toBeChecked();
+    await expect(options.locator('#custom')).toHaveValue('space wizard');
+    await options.getByLabel('Search built-in terms', { exact: true }).fill('MASTURBAT');
+    await expect(options.locator('.term-group:visible')).toHaveCount(1);
+    await expect(options.getByLabel('masturbation', { exact: true })).toBeVisible();
+    await options.locator('#term-search').focus();
+    await options.keyboard.press('Tab');
+    await expect(
+      options.getByRole('button', {
+        name: 'Enable category: Sexual acts and explicit content',
+        exact: true,
+      }),
+    ).toBeFocused();
+    await options
+      .getByRole('button', {
+        name: 'Disable category: Sexual acts and explicit content',
+        exact: true,
+      })
+      .click();
+    await options.locator('#term-search').fill('vibrator');
+    await expect(options.getByLabel('vibrator', { exact: true })).not.toBeChecked();
+    await options.locator('#term-search').fill('no such built-in term');
+    await expect(options.locator('#term-empty')).toBeVisible();
+    await options.locator('#term-search').fill('');
+    await expect(options.locator('.term-group:visible')).toHaveCount(6);
+    for (const button of await options.getByRole('button', { name: /^Disable category:/ }).all())
+      await button.click();
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('Settings saved');
+    await expect(options.locator('#term-count')).toContainText('0 enabled');
+    await expect(options.locator('#exception-count')).toContainText('1 saved');
+    const saved = (await extension.worker.evaluate(
+      async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+    )) as SavedState;
+    expect(saved.settings.disabledBuiltins).toHaveLength(BUILTINS.length);
+    expect(saved.exceptions).toEqual([exception]);
+    await options.setViewportSize({ width: 390, height: 844 });
+    await options.locator('#term-search').fill('dick');
+    expect(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await options.screenshot({ path: '/tmp/crunchyroll-expanded-terms.png', fullPage: true });
+    expect(extension.errors).toEqual([]);
+    await extension.cleanup(false);
+    extension = await launch(directory);
+    const reopened = await extension.context.newPage();
+    await reopened.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(reopened.locator('#term-count')).toContainText('0 enabled');
+    await expect(reopened.locator('#custom')).toHaveValue('space wizard');
+    await expect(reopened.locator('#exception-count')).toContainText('1 saved');
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('expanded dialogue filters English audio and captions, preserves Japanese audio, and category edits restore text', async () => {
+  const extension = await launch();
+  try {
+    const source = ass.replace(
+      'That damn class is full of shit!',
+      'You stupid pervert! Stop staring at her breasts.',
+    );
+    await extension.context.route('https://www.crunchyroll.com/fixture.ass*', (route) =>
+      route.fulfill({ contentType: 'text/plain', body: source }),
+    );
+    const page = await start(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await media(page, 1, true);
+    await expect(page.locator('#fixture-caption')).toHaveText(
+      'You **** ****! Stop staring at her ****.',
+    );
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await media(page, 1);
+    for (let n = 0; n < 3; n++) await popup.locator('.ignore').nth(n).click();
+    await media(page, 1, true);
+    await expect(page.locator('#fixture-caption')).toHaveText(
+      'You stupid pervert! Stop staring at her breasts.',
+    );
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(false);
+    await page
+      .getByRole('button', { name: 'Japanese audio + English subtitles', exact: true })
+      .click();
+    await expect(page.locator('#fixture-state')).toHaveText('Ready: japanese');
+    await media(page, 1, true);
+    await expect(page.locator('#fixture-caption')).toHaveText(
+      'You **** ****! Stop staring at her ****.',
+    );
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await media(page, 1);
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(options.locator('#save')).toBeEnabled();
+    await options
+      .getByRole('button', { name: 'Disable category: Insults and name-calling', exact: true })
+      .click();
+    await options
+      .getByRole('button', { name: 'Disable category: Sexual anatomy and slang', exact: true })
+      .click();
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('Settings saved');
+    await expect(page.locator('#fixture-caption')).toHaveText(
+      'You stupid pervert! Stop staring at her breasts.',
+    );
+    await options
+      .getByRole('button', { name: 'Enable category: Insults and name-calling', exact: true })
+      .click();
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('Settings saved');
+    await expect(page.locator('#fixture-caption')).toHaveText(
+      'You **** ****! Stop staring at her breasts.',
+    );
+    expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();
   }

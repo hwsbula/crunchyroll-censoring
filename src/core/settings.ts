@@ -1,35 +1,9 @@
 import type { SavedState, Settings } from './types.ts';
 
-// Literal, explicit variants: no hidden stemming or user-supplied regular expressions.
-export const BUILTINS = [
-  'ass',
-  'asshole',
-  'assholes',
-  'bastard',
-  'bastards',
-  'bitch',
-  'bitches',
-  'bullshit',
-  'crap',
-  'damn',
-  'damned',
-  'dick',
-  'dicks',
-  'fuck',
-  'fucked',
-  'fucker',
-  'fuckers',
-  'fucking',
-  'hell',
-  'motherfucker',
-  'motherfuckers',
-  'piss',
-  'pissed',
-  'shit',
-  'shits',
-  'shitty',
-  'son of a bitch',
-] as const;
+import { BUILTINS } from './terms.ts';
+export { BUILTINS } from './terms.ts';
+
+const builtinSet = new Set(BUILTINS);
 export const STORAGE_KEY = 'quietroll.v1';
 export const LIMITS = {
   terms: 250,
@@ -49,11 +23,17 @@ export const DEFAULT_SETTINGS: Settings = {
   disabledBuiltins: [],
 };
 export function canonicalTerm(term: string): string {
-  return term.normalize('NFKC').replace(/[’‘]/g, "'").trim().replace(/\s+/gu, ' ').toLowerCase();
+  return term
+    .normalize('NFKC')
+    .replace(/[’‘ʼ]/g, "'")
+    .replace(/[‐‑]/g, '-')
+    .trim()
+    .replace(/\s+/gu, ' ')
+    .toLowerCase();
 }
-export function normalizeTerms(values: unknown): string[] {
-  if (!Array.isArray(values) || values.length > LIMITS.terms)
-    throw new Error('Use at most 250 terms.');
+export function normalizeTerms(values: unknown, maximum = LIMITS.terms): string[] {
+  if (!Array.isArray(values) || values.length > maximum)
+    throw new Error(`Use at most ${maximum} terms.`);
   const terms = new Set<string>();
   for (const value of values) {
     if (typeof value !== 'string') throw new Error('Every term must be text.');
@@ -80,8 +60,8 @@ export function parseSettings(value: unknown): Settings {
     if (!Number.isInteger(raw[field]) || Number(raw[field]) < 0 || Number(raw[field]) > 300)
       throw new Error('Padding must be 0–300 milliseconds.');
   }
-  const disabledBuiltins = normalizeTerms(raw.disabledBuiltins);
-  if (disabledBuiltins.some((term) => !(BUILTINS as readonly string[]).includes(term)))
+  const disabledBuiltins = normalizeTerms(raw.disabledBuiltins, BUILTINS.length);
+  if (disabledBuiltins.some((term) => !builtinSet.has(term)))
     throw new Error('Unknown built-in term.');
   return {
     enabled: raw.enabled,
@@ -121,12 +101,8 @@ export function validOccurrenceId(value: unknown): value is string {
   );
 }
 export function activeTerms(settings: Settings): string[] {
-  return [
-    ...new Set([
-      ...BUILTINS.filter((term) => !settings.disabledBuiltins.includes(term)),
-      ...settings.custom,
-    ]),
-  ];
+  const disabled = new Set(settings.disabledBuiltins);
+  return [...new Set([...BUILTINS.filter((term) => !disabled.has(term)), ...settings.custom])];
 }
 export function english(language: string | null): boolean {
   return !!language && /^en(?:[-_][a-z0-9]+)*$/i.test(language);

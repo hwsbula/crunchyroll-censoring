@@ -423,6 +423,27 @@ footer p {
   gap: 5px 15px;
   margin-top: 12px;
 }
+.term-group {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.term-group h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.term-group .actions {
+  margin-top: 10px;
+}
+.term-group .builtins {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-gutter: stable;
+}
+#term-search {
+  width: 100%;
+}
 .builtins label {
   overflow-wrap: anywhere;
   min-width: 0;

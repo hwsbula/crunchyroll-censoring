@@ -70,18 +70,25 @@
                 placeholder="Add a word or multiword phrase"
               ></textarea>
               <p class="help">
-                Matching ignores case, normalizes whitespace and curly apostrophes, and respects
-                word boundaries. “ass” does not match “class”. No regular expressions or automatic
-                stemming.
+                Matching ignores case, normalizes whitespace, curly apostrophes and Unicode hyphens,
+                and respects word boundaries. “ass” does not match “class”. No regular expressions
+                or automatic stemming.
               </p>
             </section>
             <section class="card">
-              <h2>Starter list</h2>
+              <h2>Built-in terms</h2>
               <p class="help">
-                Uncheck unwanted built-in terms. Variants are listed explicitly. “hell” and “damn”
-                are included; disable them if they are too broad.
+                All six categories start enabled, including mild insults, anatomy and euphemisms.
+                Uncheck unwanted terms or disable a category, then save. Matching is literal:
+                harmless uses and names such as “balls”, “breast”, “cock”, “Dick” and “Fanny” can
+                match too. Category buttons affect the whole category, including terms hidden by
+                search.
               </p>
-              <div id="builtins" class="builtins"></div>
+              <label for="term-search">Search built-in terms</label>
+              <input id="term-search" type="search" autocomplete="off" aria-controls="builtins" />
+              <p id="term-count" class="help" role="status" aria-live="polite">Loading terms…</p>
+              <p id="term-empty" class="help" hidden>No built-in terms match this search.</p>
+              <div id="builtins"></div>
             </section>
             <div class="actions">
               <button id="save" class="primary" type="submit">Save settings</button
@@ -130,7 +137,7 @@
       </main>
       <footer>
         <p>
-          CrunchyRoll Censoring 0.1.5 · Integration preview · No analytics, accounts, or cloud
+          CrunchyRoll Censoring 0.1.6 · Integration preview · No analytics, accounts, or cloud
           transcription
         </p>
       </footer>
