@@ -1,0 +1,72 @@
+name: Publish verified v0.1.5
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-v0.1.5.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: extension-release-v0.1.5
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # One-shot: only the immediate successor of the tested source can publish.
+    # Every subsequent normal push is skipped, even before this file is removed.
+    if: github.repository == 'hwsbula/crunchyroll-censoring' && github.event.before == '7e503396a9ee7c39344b6ab4f1483f07fb0f4093' && github.event.head_commit.message == 'Publish v0.1.5 from the verified production build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: 7e503396a9ee7c39344b6ab4f1483f07fb0f4093
+    steps:
+      - name: Verify the exact source passed CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$GH_REPO/actions/runs/43553313713" --jq '.head_sha + ":" + .conclusion')"
+          [[ "$actual" == "$SOURCE_SHA:success" ]]
+      - name: Retrieve the verified production archive
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: extension-package
+          run-id: 43553313713
+          github-token: ${{ github.token }}
+          path: built
+      - name: Prepare the installable ZIP and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'a4a00141c5c5d2969309b00549051c1c9d9453d8c2a87dcaf30fb992ab52bcb3  built/crunchyroll-censoring-0.1.5.zip' | sha256sum --check
+          mkdir assets
+          cp built/crunchyroll-censoring-0.1.5.zip assets/crunchyroll-censoring-0.1.5-extension.zip
+          (cd assets && sha256sum crunchyroll-censoring-0.1.5-extension.zip > crunchyroll-censoring-0.1.5-extension.zip.sha256)
+          cat > notes.md <<'NOTES'
+          Updated the toolbar, extension manager, popup and settings icons to the white Crunchyroll symbol on orange. Filtering behavior and permissions are unchanged.
+
+          Download **crunchyroll-censoring-0.1.5-extension.zip** below. Extract it, open `chrome://extensions`, enable Developer mode, click **Load unpacked** and select the folder containing `manifest.json`. For an existing installation, replace files in the same loaded folder and click **Reload** to retain settings.
+
+          The automatic Source code downloads require building; they are not the installable extension. The SHA-256 sidecar verifies the extension ZIP.
+
+          Validation: 31 unit tests, 16 Chromium fixture scenarios and the production build checks passed for this exact source revision. Live Crunchyroll compatibility remains subject to the documented caption/rendering limits; missing or mismatched English-dub CC prevents audio filtering, and whole-cue muting can silence surrounding dialogue.
+
+          Icon source and attribution: https://github.com/hwsbula/crunchyroll-censoring/blob/v0.1.5/assets/ICON-SOURCE.md
+          NOTES
+      - name: Create the exact tag and publish only after both uploads
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GH_REPO/git/ref/tags/v0.1.5" --jq '.object.sha' > tag-sha.txt 2> tag-error.txt; then
+            [[ "$(cat tag-sha.txt)" == "$SOURCE_SHA" ]]
+          else
+            grep -Fq '(HTTP 404)' tag-error.txt || { cat tag-error.txt >&2; exit 1; }
+            gh api "repos/$GH_REPO/git/refs" --method POST -f ref=refs/tags/v0.1.5 -f "sha=$SOURCE_SHA" >/dev/null
+          fi
+          gh release create v0.1.5 --verify-tag --draft --title 'CrunchyRoll Censoring v0.1.5' --notes-file notes.md
+          gh release upload v0.1.5 assets/crunchyroll-censoring-0.1.5-extension.zip assets/crunchyroll-censoring-0.1.5-extension.zip.sha256
+          gh release edit v0.1.5 --draft=false --latest
