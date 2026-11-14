@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#ae3c13"/><path d="M24 52h16l24-20v64L40 76H24z" fill="#fff"/><path d="M82 48l22 32m0-32L82 80" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Crunchyroll brand glyph: CoreUI Icons, svg/brand/cib-crunchyroll.svg (CC0). -->
+  <rect width="512" height="512" fill="#ff6400"/>
+  <path fill="#fff" transform="translate(100 100) scale(9.75)" d="M3.912 17.959A14.07 14.07 0 0 1 7.421 7.495a14.1 14.1 0 0 1 9.98-4.708A14.07 14.07 0 0 1 27.702 6.73a14.05 14.05 0 0 1 4.297 10.161V16c0-8.839-7.161-16-16-16s-16 7.161-16 16 7.161 16 16 16h1.068c-7.385-.521-13.115-6.645-13.156-14.041zm21.687.708c-5.749.021-7.183-7.984-1.776-9.959a10.5 10.5 0 0 0-5.156-1.239A11.2 11.2 0 0 0 8.318 14.38a11.202 11.202 0 0 0 14.636 14.636 11.2 11.2 0 0 0 6.911-10.349 8.4 8.4 0 0 0-.176-2.136 4.55 4.55 0 0 1-4.089 2.136z"/>
+</svg>
