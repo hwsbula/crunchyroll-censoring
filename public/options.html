@@ -14,7 +14,7 @@
           <img src="icons/icon-32.png" alt="" width="32" height="32" />
           <h1>CrunchyRoll Censoring</h1>
         </div>
-        <span class="local">On this device only</span>
+        <span class="local">Independent extension</span>
       </header>
       <main>
         <p class="eyebrow">YOUR FILTER</p>
@@ -22,6 +22,50 @@
         <p class="intro">
           Literal English words and phrases. Your changes apply to active players after saving.
         </p>
+        <section class="card" aria-labelledby="sync-heading">
+          <h2 id="sync-heading">Sync and settings backup</h2>
+          <label class="check"
+            ><input id="sync-enabled" type="checkbox" disabled /> Use Chrome settings sync</label
+          >
+          <p class="help">
+            Chrome can carry saved preferences, custom terms and built-in choices between
+            installations of this extension with the same ID. Sign into the same Chrome profile
+            account and enable sync. Captions, playback logs and episode-specific Ignore choices
+            stay local. Chrome controls delivery; this extension cannot verify your sign-in or
+            another device.
+          </p>
+          <p id="sync-status" class="status" role="status" aria-live="polite">
+            Checking Chrome Sync storage…
+          </p>
+          <div class="actions">
+            <button id="sync-retry" type="button">Retry sync</button>
+            <button id="sync-local" type="button">Upload this device's saved settings</button>
+            <button id="sync-remote" type="button">Use synced settings</button>
+            <button id="sync-clear" type="button">Remove synced settings</button>
+          </div>
+          <div id="sync-confirm" class="confirmation" hidden>
+            <p id="sync-confirm-text"></p>
+            <button id="sync-confirm-yes" type="button">Confirm</button>
+            <button id="sync-confirm-no" type="button">Cancel</button>
+          </div>
+          <h3 class="backup-heading">Move from an unpacked installation</h3>
+          <p class="help">
+            Export saved settings before changing extension installations. Import the file into the
+            store version, review it and confirm replacement. Backups contain word lists and
+            preferences only; local Ignore choices are retained on import. Unsaved form edits are
+            not exported.
+          </p>
+          <div class="actions">
+            <button id="export-settings" type="button">Export saved settings</button>
+          </div>
+          <label for="import-settings">Choose settings backup (JSON)</label>
+          <input id="import-settings" type="file" accept=".json,application/json" />
+          <div id="import-preview" class="confirmation" hidden>
+            <p id="import-summary"></p>
+            <button id="import-confirm" type="button">Replace saved settings</button>
+            <button id="import-cancel" type="button">Cancel import</button>
+          </div>
+        </section>
         <form id="settings-form">
           <fieldset id="fields" disabled>
             <section class="card">
@@ -137,7 +181,7 @@
       </main>
       <footer>
         <p>
-          CrunchyRoll Censoring 0.1.6 · Integration preview · No analytics, accounts, or cloud
+          CrunchyRoll Censoring 0.1.7 · Independent integration preview · No analytics or cloud
           transcription
         </p>
       </footer>

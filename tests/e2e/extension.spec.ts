@@ -6,6 +6,9 @@ import { join, resolve } from 'node:path';
 import type { RoutedPlayer } from '../../src/shared/protocol.ts';
 import type { SavedState } from '../../src/core/types.ts';
 import { BUILTINS } from '../../src/core/terms.ts';
+import { syncBundle, SYNC_HEAD } from '../../src/shared/settings-sync.ts';
+import { DEFAULT_SETTINGS } from '../../src/core/settings.ts';
+import { settingsBackup } from '../../src/core/backup.ts';
 
 // Browser plugin not available. These tests load the actual unpacked MV3 bundle
 // in Chromium. Host responses are intercepted synthetic fixtures, not live CR.
@@ -390,6 +393,227 @@ test('expanded dialogue filters English audio and captions, preserves Japanese a
     await expect(page.locator('#fixture-caption')).toHaveText(
       'You **** ****! Stop staring at her breasts.',
     );
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('settings backup downloads, previews, cancels and imports across profiles without changing exceptions', async () => {
+  const a = await launch();
+  const b = await launch();
+  try {
+    const options = await a.context.newPage();
+    await options.goto(`chrome-extension://${a.id}/options.html`);
+    await expect(options.locator('#save')).toBeEnabled();
+    await options.locator('#custom').fill('space wizard\nliteral.*term');
+    await options.getByLabel('hell', { exact: true }).uncheck();
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('Settings saved');
+    const downloadPromise = options.waitForEvent('download');
+    await options.locator('#export-settings').click();
+    const download = await downloadPromise;
+    const text = await readFile((await download.path())!, 'utf8');
+    expect(JSON.parse(text).settings.custom).toEqual(['space wizard', 'literal.*term']);
+    expect(text).not.toContain('exceptions');
+    const other = await b.context.newPage();
+    await other.goto(`chrome-extension://${b.id}/options.html`);
+    await expect(other.locator('#save')).toBeEnabled();
+    const localException = `${'a'.repeat(64)}.${'b'.repeat(64)}.0.4.${'c'.repeat(64)}`;
+    await b.worker.evaluate(async (id) => {
+      await chrome.storage.local.set({
+        'quietroll.v1': {
+          version: 1,
+          revision: 0,
+          settings: {
+            enabled: true,
+            mode: 'auto',
+            reveal: false,
+            beforeMs: 80,
+            afterMs: 100,
+            custom: [],
+            disabledBuiltins: [],
+          },
+          exceptions: [id],
+        },
+      });
+    }, localException);
+    await other.locator('#import-settings').setInputFiles({
+      name: 'settings.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(text),
+    });
+    await expect(other.locator('#import-summary')).toContainText('2 custom terms');
+    await other.locator('#import-cancel').click();
+    await expect(other.locator('#custom')).toHaveValue('');
+    await other.locator('#import-settings').setInputFiles({
+      name: 'settings.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(text),
+    });
+    await other.locator('#import-confirm').click();
+    await expect(other.locator('#status')).toContainText('Settings imported');
+    await expect(other.locator('#custom')).toHaveValue('space wizard\nliteral.*term');
+    await expect(other.getByLabel('hell', { exact: true })).not.toBeChecked();
+    expect(
+      await b.worker.evaluate(
+        async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+      ),
+    ).toMatchObject({ exceptions: [localException] });
+    await other.locator('#import-settings').setInputFiles({
+      name: 'bad.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"format":"wrong"}'),
+    });
+    await expect(other.locator('#status')).toContainText('Unsupported settings backup');
+    await expect(other.locator('#custom')).toHaveValue('space wizard\nliteral.*term');
+    await other.locator('#sync-enabled').focus();
+    await other.keyboard.press('Tab');
+    await expect(other.locator('#sync-retry')).toBeFocused();
+    await other.setViewportSize({ width: 390, height: 844 });
+    expect(await other.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await other.screenshot({ path: '/tmp/crunchyroll-sync-narrow.png', fullPage: true });
+    expect(a.errors).toEqual([]);
+    expect(b.errors).toEqual([]);
+  } finally {
+    await a.cleanup();
+    await b.cleanup();
+  }
+});
+
+test('native Chrome Sync changes wait for complete chunks, update active filtering and reject stale form saves', async () => {
+  const extension = await launch();
+  try {
+    const page = await start(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await media(page, 1);
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(options.locator('#save')).toBeEnabled();
+    const initial = (await extension.worker.evaluate(
+      async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+    )) as SavedState | undefined;
+    const bundle = await syncBundle({
+      ...DEFAULT_SETTINGS,
+      enabled: false,
+      custom: ['from another device'],
+      disabledBuiltins: [...BUILTINS],
+    });
+    // Simulated transport between profiles, using the real Chrome Sync storage API.
+    await extension.worker.evaluate(
+      async (head) => {
+        await chrome.storage.sync.set(head);
+      },
+      { [SYNC_HEAD]: bundle.head },
+    );
+    await expect(options.locator('#sync-status')).toContainText('Waiting for the complete');
+    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await extension.worker.evaluate(async (chunks) => {
+      await chrome.storage.sync.set(chunks);
+    }, bundle.items);
+    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(page.locator('#fixture-caption')).toHaveText('That damn class is full of shit!');
+    await options.locator('#custom').fill('stale draft');
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('changed in another window');
+    await expect(options.locator('#custom')).toHaveValue('stale draft');
+    await options.locator('#reload').click();
+    await expect(options.locator('#custom')).toHaveValue('from another device');
+    const current = (await extension.worker.evaluate(
+      async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+    )) as SavedState;
+    expect(current.revision).toBeGreaterThan(initial?.revision ?? 0);
+    await options.locator('#sync-clear').click();
+    await options.locator('#sync-confirm-no').click();
+    expect(
+      await extension.worker.evaluate(
+        async (key) => (await chrome.storage.sync.get(key))[key] !== undefined,
+        SYNC_HEAD,
+      ),
+    ).toBe(true);
+    await options.locator('#sync-clear').click();
+    await options.locator('#sync-confirm-yes').click();
+    await expect(options.locator('#sync-enabled')).not.toBeChecked();
+    expect(
+      await extension.worker.evaluate(
+        async (key) => (await chrome.storage.sync.get(key))[key],
+        SYNC_HEAD,
+      ),
+    ).toBeUndefined();
+    await options.locator('#sync-enabled').check();
+    await extension.worker.evaluate(
+      async (data) => {
+        await chrome.storage.sync.set(data);
+      },
+      { [SYNC_HEAD]: bundle.head },
+    );
+    await expect(options.locator('#sync-status')).toContainText('Waiting for the complete');
+    await options.locator('#custom').fill('keep this unsaved draft');
+    await options.locator('#sync-remote').click();
+    await options.locator('#sync-confirm-yes').click();
+    await expect(options.locator('#sync-status')).toContainText('Waiting for the complete');
+    await expect(options.locator('#custom')).toHaveValue('keep this unsaved draft');
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('Web Store screenshots show actual settings and legacy sync conflicts require a choice', async () => {
+  const extension = await launch();
+  try {
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(options.locator('#save')).toBeEnabled();
+    await options.setViewportSize({ width: 1280, height: 800 });
+    await expect(options).toHaveTitle('CrunchyRoll Censoring — Term settings');
+    await expect(options.locator('#sync-status')).not.toContainText('Checking');
+    await options.screenshot({
+      path: '/tmp/crunchyroll-store-sync.jpg',
+      type: 'jpeg',
+      quality: 95,
+    });
+    await options.locator('#term-search').fill('hell');
+    await options
+      .getByRole('heading', { name: 'Built-in terms', exact: true })
+      .evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await options.screenshot({
+      path: '/tmp/crunchyroll-store-terms.jpg',
+      type: 'jpeg',
+      quality: 95,
+    });
+    const backup = settingsBackup({ ...DEFAULT_SETTINGS, custom: ['saved on this device'] });
+    await options.locator('#import-settings').setInputFiles({
+      name: 'settings.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(backup),
+    });
+    await options.locator('#import-confirm').click();
+    await expect(options.locator('#status')).toContainText('Settings imported');
+    await options.locator('#sync-enabled').uncheck();
+    await expect(options.locator('#sync-status')).toContainText('Sync is off');
+    await options.locator('#custom').fill('offline local change');
+    await options.locator('#save').click();
+    await expect(options.locator('#status')).toContainText('Settings saved');
+    const remote = await syncBundle({ ...DEFAULT_SETTINGS, custom: ['other device profile'] });
+    await extension.worker.evaluate(
+      async (data) => {
+        await chrome.storage.sync.set(data);
+      },
+      { ...remote.items, [SYNC_HEAD]: remote.head },
+    );
+    await options.locator('#sync-enabled').check();
+    await expect(options.locator('#sync-status')).toContainText('different preferences');
+    await expect(options.locator('#custom')).toHaveValue('offline local change');
+    await options.locator('#sync-remote').click();
+    await options.locator('#sync-confirm-no').click();
+    await expect(options.locator('#custom')).toHaveValue('offline local change');
+    await options.locator('#sync-remote').click();
+    await options.locator('#sync-confirm-yes').click();
+    await expect(options.locator('#custom')).toHaveValue('other device profile');
     expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();

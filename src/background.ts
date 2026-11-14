@@ -1,5 +1,6 @@
 import { record } from './core/settings.ts';
 import { SettingsRepository } from './shared/repository.ts';
+import type { Store } from './shared/repository.ts';
 import {
   integer,
   parseSnapshot,
@@ -10,13 +11,32 @@ import {
 import type { RoutedPlayer, Target } from './shared/protocol.ts';
 import type { SavedState, Settings } from './core/types.ts';
 import { episodeId, SITE_ORIGIN } from './integration/metadata.ts';
+import { SettingsSync, SYNC_PREFIX } from './shared/settings-sync.ts';
+import { readSettingsBackup, settingsBackup } from './core/backup.ts';
 
-const repository = new SettingsRepository({
+const local = {
   get: (key) => chrome.storage.local.get(key),
   set: (items) => chrome.storage.local.set(items),
-});
-const ready = chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).then(
-  () => true,
+} satisfies Store;
+const repository = new SettingsRepository(local);
+const preferences = new SettingsSync(
+  repository,
+  local,
+  {
+    read: () => chrome.storage.sync.get(null),
+    set: (items) => chrome.storage.sync.set(items),
+    remove: (keys) => chrome.storage.sync.remove(keys),
+  },
+  broadcast,
+);
+const ready = Promise.all([
+  chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
+  chrome.storage.sync.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
+]).then(
+  async () => {
+    await preferences.start();
+    return true;
+  },
   () => false,
 );
 const registryKey = 'quietroll.frames.v1';
@@ -129,10 +149,31 @@ async function handleUi(raw: Record<string, unknown>): Promise<unknown> {
     case 'settings:get':
       return repository.read();
     case 'settings:save': {
-      const state = await repository.save(raw.settings, raw.revision);
-      await broadcast(state);
-      return state;
+      return preferences.save(raw.settings, raw.revision);
     }
+    case 'settings:export':
+      return settingsBackup((await repository.read()).settings);
+    case 'settings:import':
+      if (typeof raw.backup !== 'string') throw new Error('Choose a settings backup first.');
+      return preferences.save(readSettingsBackup(raw.backup), raw.revision);
+    case 'sync:status':
+      return preferences.getStatus();
+    case 'sync:retry':
+      await preferences.refresh();
+      return preferences.getStatus();
+    case 'sync:toggle':
+      if (typeof raw.enabled !== 'boolean') throw new Error('Invalid sync preference.');
+      await preferences.toggle(raw.enabled);
+      return preferences.getStatus();
+    case 'sync:resolve':
+      if (!['local', 'remote'].includes(String(raw.choice)))
+        throw new Error('Choose a valid sync profile.');
+      await preferences.resolve(raw.choice as 'local' | 'remote');
+      return preferences.getStatus();
+    case 'sync:clear':
+      if (raw.confirm !== true) throw new Error('Confirm removal of synced settings first.');
+      await preferences.clear();
+      return preferences.getStatus();
     case 'preferences:patch': {
       const patch = record(raw.patch);
       if (
@@ -140,11 +181,7 @@ async function handleUi(raw: Record<string, unknown>): Promise<unknown> {
         Object.keys(patch).some((key) => !['enabled', 'mode', 'reveal'].includes(key))
       )
         throw new Error('Invalid preference.');
-      const state = await repository.patch(
-        patch as Partial<Pick<Settings, 'enabled' | 'mode' | 'reveal'>>,
-      );
-      await broadcast(state);
-      return state;
+      return preferences.patch(patch as Partial<Pick<Settings, 'enabled' | 'mode' | 'reveal'>>);
     }
     case 'exceptions:clear': {
       const state = await repository.clear();
@@ -231,4 +268,8 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, respond) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   void registryMutation((frames) => frames.filter((frame) => frame.tabId !== tabId));
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && Object.keys(changes).some((key) => key.startsWith(SYNC_PREFIX)))
+    void ready.then((ok) => (ok ? preferences.refresh() : undefined)).catch(() => undefined);
 });

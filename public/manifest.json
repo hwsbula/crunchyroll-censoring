@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CrunchyRoll Censoring",
-  "version": "0.1.6",
-  "description": "Filter English profanity in supported Crunchyroll captions and matching English-dub CC audio. Coverage varies by player and episode.",
+  "version": "0.1.7",
+  "description": "Independent English profanity filter for Crunchyroll captions and matching English-dub CC audio. Coverage varies.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
   "background": {

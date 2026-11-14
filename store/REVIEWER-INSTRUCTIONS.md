@@ -1,0 +1,13 @@
+# Reviewer instructions
+
+This is an independent caption-based filter for Crunchyroll desktop. No extension login or backend is needed. A legitimate Crunchyroll session may be needed to watch an episode; no shared account credentials, subscription bypass or protected media files are provided.
+
+1. Open the extension's Term settings page. Search built-ins, toggle a term/category, save, export a settings JSON backup, import it, inspect the preview and confirm. Try malformed JSON: it must fail without changing saved settings.
+2. Chrome settings sync uses only `storage.sync`. With the same store extension ID and a Chrome account that has extension/settings sync enabled, preference and word-list edits can propagate to another desktop installation. A signed-out/offline profile still has a local copy. The UI reports storage state rather than claiming successful delivery to another device. Ignore exceptions, captions and playback logs do not sync.
+3. On a Crunchyroll episode you may access, choose English audio and available English dialogue/CC matching that dub. The audio status may become active only when matching current-version captions and a valid media timeline are accessible. Matching cues are silenced for their complete duration plus bounded padding. Test a timestamp, then normal Play; Ignore one match, Unignore it and edit a rule.
+4. Choose Japanese audio and English subtitles. Text filtering can work in a supported English renderer; Japanese audio must remain unchanged. Select a non-English subtitle language: text must remain untouched.
+5. Test missing CC, captions off and an unsupported/hardcoded rendering path. The popup and player show coverage warnings and leave unsupported audio/text unchanged. These states are intentional, not an indication of universal coverage.
+
+The committed deterministic tests use synthetic caption/player fixtures and real Chrome extension APIs. They are not a production content source. The store screenshots show the actual settings UI, with synthetic/default preferences only; no real episode screenshots or private data are included.
+
+Live service access has been unavailable in the build environment. Current Crunchyroll integration depends on the documented player/metadata/rendering contracts in README.md. Real cross-device Google account delivery and Web Store installation/restore require signed-in devices and the approved store item and have not been verified here. Review status and acceptance are determined by Google.

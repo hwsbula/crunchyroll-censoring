@@ -1,6 +1,6 @@
 {
   "name": "crunchyroll-censoring",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Local, caption-timed English profanity filtering for supported Crunchyroll players.",
   "private": true,
   "type": "module",
@@ -23,7 +23,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "verify": "npm run check && npm run test:e2e",
     "package": "npm run build && node scripts/package.mjs",
-    "release": "npm run verify && npm run package"
+    "release": "npm run verify && npm run package",
+    "release:store": "npm run release && node scripts/package-store.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

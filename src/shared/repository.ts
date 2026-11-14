@@ -41,6 +41,13 @@ export class SettingsRepository {
       state.settings = parsed;
     });
   }
+  // A complete validated remote profile replaces preferences only, never local exceptions.
+  apply(settings: unknown): Promise<SavedState> {
+    const parsed = parseSettings(settings);
+    return this.mutate((state) => {
+      state.settings = parsed;
+    });
+  }
   patch(patch: Partial<Pick<Settings, 'enabled' | 'mode' | 'reveal'>>): Promise<SavedState> {
     return this.mutate((state) => {
       state.settings = parseSettings({ ...state.settings, ...patch });

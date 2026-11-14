@@ -35,8 +35,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Exercise the installed extension
         run: npm run test:e2e
-      - name: Create extension archive
-        run: npm run package
+      - name: Create extension and store submission packages
+        run: |
+          npm run package
+          node scripts/package-store.mjs
       - name: Upload extension archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

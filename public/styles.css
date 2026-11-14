@@ -444,6 +444,27 @@ footer p {
 #term-search {
   width: 100%;
 }
+.backup-heading {
+  margin-top: 22px;
+  font-size: 14px;
+}
+.confirmation {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+}
+.confirmation p {
+  margin-bottom: 10px;
+}
+#sync-status {
+  margin: 12px 0;
+}
+input[type='file'] {
+  max-width: 100%;
+  font-size: 12px;
+}
 .builtins label {
   overflow-wrap: anywhere;
   min-width: 0;
