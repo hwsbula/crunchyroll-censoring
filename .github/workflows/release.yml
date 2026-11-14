@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example v0.1.4)
+        description: Existing version tag to build (for example v0.1.4)
         required: true
         type: string
 
@@ -108,14 +108,24 @@ jobs:
         with:
           name: installable-extension
           path: release-assets
-      - name: Attach assets to the existing GitHub Release
+      - name: Attach assets and publish a missing GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" --json tagName >/dev/null
+          created=false
+          if ! gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > release.json 2> release-error.txt; then
+            if ! grep -Fq '(HTTP 404)' release-error.txt; then
+              cat release-error.txt >&2
+              exit 1
+            fi
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "CrunchyRoll Censoring $RELEASE_TAG" \
+              --notes 'Download the -extension.zip asset below, extract it, then use Chrome → Extensions → Developer mode → Load unpacked and select the folder containing manifest.json. The Source code downloads are for development.'
+            created=true
+          fi
           gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > existing-assets.txt
           mkdir -p existing-assets
           for asset in release-assets/*-extension.zip release-assets/*-extension.zip.sha256; do
@@ -130,3 +140,6 @@ jobs:
               gh release upload "$RELEASE_TAG" "$asset"
             fi
           done
+          if [[ "$created" == true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi
