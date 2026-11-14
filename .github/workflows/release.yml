@@ -1,0 +1,132 @@
+name: Publish extension
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (for example v0.1.4)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate tag syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){2,3}$ ]] || {
+            echo 'Use a version tag such as v0.1.4.' >&2
+            exit 1
+          }
+      - name: Check out the exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check version matches the tag
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+          const manifest = JSON.parse(await readFile('public/manifest.json', 'utf8'));
+          if (pkg.name !== 'crunchyroll-censoring' ||
+              process.env.RELEASE_TAG !== `v${pkg.version}` || manifest.version !== pkg.version) {
+            throw new Error('The tag, package.json and public/manifest.json must name the same extension version.');
+          }
+          JS
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install browser and Linux dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Test, build and package the extension
+        run: npm run release
+      - name: Prepare installable release assets
+        env:
+          RELEASE_ASSET_DIR: ${{ runner.temp }}/extension-release
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile, writeFile, mkdir } from 'node:fs/promises';
+          import { createHash } from 'node:crypto';
+          import { join } from 'node:path';
+          import { unzipSync, strFromU8 } from 'fflate';
+          const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+          const input = process.env.RELEASE_INPUT_DIR ?? 'artifacts';
+          const archive = await readFile(join(input, `${pkg.name}-${pkg.version}.zip`));
+          const files = unzipSync(archive);
+          if (!files['manifest.json']) throw new Error('Installable ZIP needs manifest.json at its root.');
+          const manifest = JSON.parse(strFromU8(files['manifest.json']));
+          if (manifest.version !== pkg.version) throw new Error('ZIP version mismatch.');
+          const required = ['background.js', 'content.js', 'player.js', 'popup.js', 'options.js'];
+          if (required.some((file) => !files[file])) throw new Error('ZIP is missing compiled extension scripts.');
+          if (Object.keys(files).some((file) => /^(src|tests|node_modules|\.git)\//.test(file))) {
+            throw new Error('Source/development files must not be shipped as the installable extension.');
+          }
+          const output = process.env.RELEASE_ASSET_DIR;
+          if (!output) throw new Error('Missing release asset directory.');
+          await mkdir(output, { recursive: true });
+          const name = `${pkg.name}-${pkg.version}-extension.zip`;
+          await writeFile(join(output, name), archive);
+          await writeFile(join(output, `${name}.sha256`), `${createHash('sha256').update(archive).digest('hex')}  ${name}\n`);
+          JS
+      - name: Keep verified assets for the publishing job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: installable-extension
+          path: ${{ runner.temp }}/extension-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Retrieve verified extension assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: installable-extension
+          path: release-assets
+      - name: Attach assets to the existing GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json tagName >/dev/null
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > existing-assets.txt
+          mkdir -p existing-assets
+          for asset in release-assets/*-extension.zip release-assets/*-extension.zip.sha256; do
+            name="$(basename "$asset")"
+            if grep -Fxq -- "$name" existing-assets.txt; then
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir existing-assets
+              if ! cmp -s -- "$asset" "existing-assets/$name"; then
+                echo "Release asset $name already exists with different contents; leaving it unchanged." >&2
+                exit 1
+              fi
+            else
+              gh release upload "$RELEASE_TAG" "$asset"
+            fi
+          done
