@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DisplayCueIndex,
   projectCaptionMatches,
   redactDisplaySegments,
   resolveSubtitleLabel,
@@ -126,6 +127,8 @@ void test('VTT overlay policies update immediately for per-occurrence exceptions
   assert.deepEqual(terms, ['damn', 'shit']);
   assert.ok(engine.snapshot().occurrences.every((row) => !row.textCensored));
   actual.add(session.tracks[0]!.document.cues[0]!.key);
+  // The caption renderer has a different clock; log its actual source cue.
+  media.currentTime = 10;
   media.dispatchEvent(new Event('timeupdate'));
   assert.ok(engine.snapshot().occurrences.every((row) => row.textCensored));
   const rows = await analyse(session, state);
@@ -142,4 +145,104 @@ void test('VTT overlay policies update immediately for per-occurrence exceptions
   engine.update(state);
   assert.deepEqual(terms, []);
   assert.equal(engine.snapshot().subtitles.phase, 'disabled');
+});
+
+void test('exact displayed text identifies its own cue outside the active media interval, including speaker labels', async () => {
+  const document = await parseCaptions(
+    'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n[CAPTAIN] That damn\nclass is full of shit!\n\n00:00:03.000 --> 00:00:04.000\nWhat the hell?\n',
+    'vtt',
+  );
+  const [first, second] = document.cues;
+  const index = new DisplayCueIndex(document.cues);
+  const policy = new Map(
+    document.cues.map((cue) => [cue.key, findMatches(cue.text, ['damn', 'shit', 'hell'])]),
+  );
+  const text = '\n[CAPTAIN] That damn class is full of shit!';
+  const result = index.match(text, [second!], policy);
+  assert.equal(result.kind, 'matched');
+  if (result.kind !== 'matched') return;
+  assert.equal(result.timing, 'text');
+  assert.deepEqual(
+    result.cues.map((cue) => cue.key),
+    [first!.key],
+  );
+  assert.deepEqual(redactDisplaySegments([text], result.matches), [
+    '\n[CAPTAIN] That **** class is full of ****!',
+  ]);
+  assert.equal(index.match('[CAPTAIN] Different damn dialogue.', [], policy).kind, 'missing');
+  assert.equal(index.match('That damn class is full of shit!', [], policy).kind, 'missing');
+  assert.equal(index.match('', [], policy).kind, 'missing');
+  // An updated exception policy removes only its occurrence, not another term.
+  policy.set(first!.key, findMatches(first!.text, ['shit']));
+  const ignored = index.match(text, [], policy);
+  assert.equal(ignored.kind, 'matched');
+  if (ignored.kind === 'matched')
+    assert.deepEqual(redactDisplaySegments([text], ignored.matches), [
+      '\n[CAPTAIN] That damn class is full of ****!',
+    ]);
+});
+
+void test('repeated exact lines require unambiguous current timing and cannot borrow another occurrence exception', async () => {
+  const document = await parseCaptions(
+    'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nDamn!\n\n00:00:03.000 --> 00:00:04.000\nDamn!\n',
+    'vtt',
+  );
+  const [first, second] = document.cues;
+  const index = new DisplayCueIndex(document.cues);
+  const policy = new Map([
+    [first!.key, []],
+    [second!.key, findMatches(second!.text, ['damn'])],
+  ]);
+  assert.equal(index.match('Damn!', [], policy).kind, 'ambiguous');
+  assert.equal(index.match('Damn!', document.cues, policy).kind, 'ambiguous');
+  const ignored = index.match('Damn!', [first!], policy);
+  assert.equal(ignored.kind, 'matched');
+  if (ignored.kind === 'matched') assert.deepEqual(ignored.matches, []);
+  const filtered = index.match('Damn!', [second!], policy);
+  assert.equal(filtered.kind, 'matched');
+  if (filtered.kind === 'matched') {
+    assert.equal(filtered.timing, 'current');
+    assert.deepEqual(filtered.cues, [second]);
+    assert.deepEqual(redactDisplaySegments(['Damn!'], filtered.matches), ['****!']);
+  }
+});
+
+void test('overlapping current cues retain separate match offsets and a fresh track index cannot reuse old text', async () => {
+  const document = await parseCaptions(
+    'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nDamn!\n\n00:00:02.000 --> 00:00:04.000\nWhat the hell?\n',
+    'vtt',
+  );
+  const index = new DisplayCueIndex(document.cues);
+  const policy = new Map(
+    document.cues.map((cue) => [cue.key, findMatches(cue.text, ['damn', 'hell'])]),
+  );
+  const result = index.match('Damn!\nWhat the hell?', document.cues, policy);
+  assert.equal(result.kind, 'matched');
+  if (result.kind === 'matched') {
+    assert.equal(result.timing, 'current');
+    assert.deepEqual(redactDisplaySegments(['Damn!', '\n', 'What the hell?'], result.matches), [
+      '****!',
+      '\n',
+      'What the ****?',
+    ]);
+  }
+  const other = new DisplayCueIndex([document.cues[1]!]);
+  assert.equal(other.match('Damn!', [], policy).kind, 'missing');
+});
+
+void test('observed timing drift blocks repeated-line exceptions until a unique cue verifies alignment again', async () => {
+  const document = await parseCaptions(
+    'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nThat damn class!\n\n00:00:03.000 --> 00:00:04.000\nDamn!\n\n00:00:05.000 --> 00:00:06.000\nDamn!\n',
+    'vtt',
+  );
+  const index = new DisplayCueIndex(document.cues);
+  const [unique, first, second] = document.cues;
+  const policy = new Map(document.cues.map((cue) => [cue.key, findMatches(cue.text, ['damn'])]));
+  policy.set(second!.key, []);
+  assert.equal(index.match(unique!.text, [], policy).kind, 'matched');
+  assert.equal(index.match('Damn!', [second!], policy).kind, 'ambiguous');
+  assert.equal(index.match(unique!.text, [unique!], policy).kind, 'matched');
+  const resolved = index.match('Damn!', [first!], policy);
+  assert.equal(resolved.kind, 'matched');
+  if (resolved.kind === 'matched') assert.equal(resolved.matches.length, 1);
 });

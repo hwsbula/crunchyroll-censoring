@@ -4,6 +4,8 @@ const video = document.querySelector('video');
 const controls = document.querySelector('[data-testid="player-controls-root"]');
 const toggle = controls.querySelector('button');
 const parameters = new URL(location.href).searchParams;
+// Exercise independent renderer timing without changing the source cue times.
+let captionDelay = Number(parameters.get('caption-delay') || 0);
 let layer = document.querySelector('ul');
 let mode = 'english',
   selected = 'English [CC]',
@@ -21,7 +23,7 @@ const url = (spanish = false) =>
   `https://www.crunchyroll.com/${spanish ? 'spanish' : 'fixture'}.vtt`;
 
 function audio() {
-  const count = 8000 * 12;
+  const count = 8000 * (12 + Math.abs(captionDelay));
   const data = new DataView(new ArrayBuffer(44 + count * 2));
   const write = (at, text) =>
     [...text].forEach((char, index) => data.setUint8(at + index, char.charCodeAt(0)));
@@ -133,6 +135,7 @@ function menu() {
     }, 250);
 }
 async function begin(next, continuing = false) {
+  if (parameters.has('stitched')) captionDelay = sequence ? 7.25 : 19.061;
   mode = next;
   document.querySelector('#fixture-state').textContent = 'Loading';
   selected =
@@ -154,7 +157,10 @@ async function begin(next, continuing = false) {
   nodes.clear();
   const version = (next === 'japanese' ? 'TESTJA' : 'TESTEN') + (sequence || '');
   await fetch(`/content/v2/cms/objects/${version}?fixture=${next}`);
-  await fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}`);
+  const stitched = parameters.has('stitched')
+    ? `&stitched-prefix=${captionDelay}${parameters.has('stitched-ad') ? '&stitched-ad' : ''}`
+    : '';
+  await fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}${stitched}`);
   video.src = audio();
   await new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
   if (!continuing) video.volume = 0.4;
@@ -164,9 +170,8 @@ async function begin(next, continuing = false) {
   document.querySelector('#fixture-state').textContent = `Ready: ${next}`;
 }
 function render() {
-  const active = cues.filter(
-    (cue) => cue.start <= video.currentTime && cue.end > video.currentTime,
-  );
+  const displayTime = video.currentTime - captionDelay;
+  const active = cues.filter((cue) => cue.start <= displayTime && cue.end > displayTime);
   const key = JSON.stringify([active, corrupt, empty]);
   if (key !== lastKey) {
     layer.replaceChildren();
@@ -175,7 +180,9 @@ function render() {
     if (!empty)
       for (const cue of active) {
         const li = document.createElement('li');
+        li.style.display = 'inline';
         li.style.whiteSpace = 'pre-line';
+        li.style.backgroundColor = 'rgb(0, 0, 0)';
         const text = corrupt ? 'Unassociated damn caption!' : cue.text;
         const parts = text.startsWith('That damn')
           ? ['That da', 'mn class is full of ', 'shit', '!']

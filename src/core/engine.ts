@@ -1,9 +1,10 @@
 import { MediaSeeker } from './seeker.ts';
 import type { SeekRoute } from './seeker.ts';
-import { activeTerms, digest, english, japanese, LIMITS } from './settings.ts';
+import { activeTerms, digest, english, japanese, LIMITS, parseTimingOffset } from './settings.ts';
 import { findMatches } from './matcher.ts';
 import { renderDocument } from './captions.ts';
 import { CueScheduler, MuteGate } from './scheduler.ts';
+import { automaticOffset } from './timeline.ts';
 import type { Interval, Media } from './scheduler.ts';
 import type {
   FilterStatus,
@@ -42,10 +43,16 @@ export function mayFilterAudio(session: Session, state: SavedState): boolean {
   );
 }
 export function dialogueTrack(session: Session): Track | undefined {
-  return session.tracks.find(
+  const candidates = session.tracks.filter(
     (track) =>
       track.kind === 'captions' && english(track.language) && track.version === session.version,
   );
+  const exact = candidates.filter(
+    (track) =>
+      track.language.toLowerCase().replaceAll('_', '-') ===
+      session.audioLanguage?.toLowerCase().replaceAll('_', '-'),
+  );
+  return exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : undefined;
 }
 export async function analyse(session: Session, state: SavedState): Promise<Occurrence[]> {
   const terms = activeTerms(state.settings);
@@ -80,14 +87,27 @@ export function intervalsFor(
   occurrences: readonly Occurrence[],
   track: Track,
   state: SavedState,
+  offset = 0,
 ): Interval[] {
   return occurrences
-    .filter((value) => !value.ignored && value.track === track.id)
+    .filter(
+      (value) =>
+        !value.ignored &&
+        value.track === track.id &&
+        value.endTime + offset + state.settings.afterMs / 1000 > 0,
+    )
     .map((value) => ({
-      start: Math.max(0, value.time - state.settings.beforeMs / 1000),
-      end: value.endTime + state.settings.afterMs / 1000,
+      start: Math.max(
+        track.timeline?.kind === 'stitched-main' ? track.timeline.start : 0,
+        value.time + offset - state.settings.beforeMs / 1000,
+      ),
+      end: Math.min(
+        track.timeline?.kind === 'stitched-main' ? track.timeline.end : Infinity,
+        value.endTime + offset + state.settings.afterMs / 1000,
+      ),
       ids: [value.id],
-    }));
+    }))
+    .filter((value) => value.end > value.start);
 }
 export class FilterEngine {
   private state: SavedState;
@@ -116,6 +136,73 @@ export class FilterEngine {
   private error: string | null = null;
   private rebuilding = false;
   private timelineReady = true;
+  private timingProblems = new Set<string>();
+  private timingOffsets = new Map<string, number>();
+  captionOffset(trackId: string): number {
+    const track = this.session?.tracks.find((track) => track.id === trackId);
+    return automaticOffset(track?.timeline) + (this.timingOffsets.get(trackId) ?? 0);
+  }
+  private playbackTime(value: Occurrence): number | null {
+    if (this.timingProblems.has(value.track) || this.timelineProblem(value.track)) return null;
+    const timeline = this.session?.tracks.find((track) => track.id === value.track)?.timeline;
+    const time = value.time + this.captionOffset(value.track);
+    const lower = timeline?.kind === 'stitched-main' ? timeline.start : 0;
+    const upper = timeline?.kind === 'stitched-main' ? timeline.end : 86400;
+    return time < lower || time >= upper ? null : time;
+  }
+  private timelineProblem(trackId: string): FilterStatus | null {
+    const timeline = this.session?.tracks.find((track) => track.id === trackId)?.timeline;
+    if (!timeline) return null;
+    if (timeline.kind === 'unavailable')
+      return status(
+        'unavailable',
+        'Audio filtering unavailable: this stitched playback layout or caption time basis is unsupported. English text filtering can continue; timestamp navigation is unavailable.',
+      );
+    const duration = this.media?.duration;
+    if (duration === undefined || !Number.isFinite(duration) || duration <= 0)
+      return status(
+        'loading',
+        'Loading the stitched media timeline. Audio stays unchanged until its duration is available.',
+      );
+    if (Math.abs(duration - timeline.duration) > 1)
+      return status(
+        'unavailable',
+        'Audio filtering unavailable: the video duration does not match the current stitched playback metadata. Audio and timestamp navigation are paused until the correct media timeline is available.',
+      );
+    return null;
+  }
+  correctAudioTiming(trackId: string, value: unknown): void {
+    const offset = parseTimingOffset(value);
+    const track = this.session && dialogueTrack(this.session);
+    if (
+      !this.session ||
+      !mayFilterAudio(this.session, this.state) ||
+      japanese(this.session.audioLanguage) ||
+      !track ||
+      track.id !== trackId ||
+      this.timelineProblem(trackId) ||
+      !this.timelineReady ||
+      !this.media
+    )
+      throw new Error('A current matching English-dub CC track is required for this correction.');
+    this.seeker?.cancel();
+    if (offset !== (this.timingOffsets.get(trackId) ?? 0))
+      for (const occurrence of this.occurrences) {
+        if (occurrence.track !== trackId) continue;
+        const log = this.censored.get(occurrence.id);
+        if (log) log.audio = false;
+      }
+    this.timingOffsets.set(trackId, offset);
+    this.timingProblems.delete(trackId);
+    this.computeStatuses();
+    this.scheduler?.setIntervals(
+      this.audio.phase === 'active'
+        ? intervalsFor(this.occurrences, track, this.state, this.captionOffset(trackId))
+        : [],
+    );
+    this.applyRenderer();
+    this.tick();
+  }
   readonly instance = crypto.randomUUID();
   get enabled(): boolean {
     return this.state.settings.enabled;
@@ -145,13 +232,19 @@ export class FilterEngine {
       'seeked',
       'ratechange',
       'timeupdate',
+      'durationchange',
       'ended',
     ])
       media.addEventListener(event, this.onMedia);
     this.startLoop();
     void this.rebuild();
   }
-  private onMedia = (): void => {
+  private onMedia = (event: Event): void => {
+    if (event.type === 'durationchange') {
+      this.seeker?.cancel();
+      this.setTimelineReady(this.timelineReady);
+      return;
+    }
     this.tick();
   };
   private startLoop(): void {
@@ -178,6 +271,7 @@ export class FilterEngine {
         'seeked',
         'ratechange',
         'timeupdate',
+        'durationchange',
         'ended',
       ])
         this.media.removeEventListener(event, this.onMedia);
@@ -249,7 +343,7 @@ export class FilterEngine {
     const track = this.session && dialogueTrack(this.session);
     this.scheduler?.setIntervals(
       ready && this.audio.phase === 'active' && track
-        ? intervalsFor(this.occurrences, track, this.state)
+        ? intervalsFor(this.occurrences, track, this.state, this.captionOffset(track.id))
         : [],
     );
     this.tick();
@@ -261,6 +355,29 @@ export class FilterEngine {
   setSubtitleLanguage(language: string | null): void {
     this.subtitleLanguage = language;
     this.computeStatuses();
+  }
+  flagCaptionTiming(trackId: string): void {
+    if (
+      this.timingProblems.has(trackId) ||
+      !this.session?.tracks.some(
+        (track) =>
+          track.id === trackId &&
+          track.version === this.session!.version &&
+          english(track.language),
+      )
+    )
+      return;
+    this.timingProblems.add(trackId);
+    this.seeker?.cancel();
+    // Prior interval-based actions cannot establish successful censorship once
+    // their clock is known to be wrong. Retain actual text-action evidence.
+    for (const occurrence of this.occurrences) {
+      if (occurrence.track !== trackId) continue;
+      const log = this.censored.get(occurrence.id);
+      if (log) log.audio = false;
+    }
+    this.computeStatuses();
+    if (this.audio.phase !== 'active') this.scheduler?.setIntervals([]);
   }
   updateMetadata(session: Session): void {
     this.session = session;
@@ -279,6 +396,8 @@ export class FilterEngine {
     this.rendererProblem = null;
     this.occurrences = [];
     this.censored.clear();
+    this.timingProblems.clear();
+    this.timingOffsets.clear();
     this.error = reason ?? null;
     void this.rebuild();
   }
@@ -303,7 +422,9 @@ export class FilterEngine {
       this.computeStatuses();
       const dialogue = this.session && dialogueTrack(this.session);
       this.scheduler?.setIntervals(
-        this.audio.phase === 'active' && dialogue ? intervalsFor(values, dialogue, this.state) : [],
+        this.audio.phase === 'active' && dialogue
+          ? intervalsFor(values, dialogue, this.state, this.captionOffset(dialogue.id))
+          : [],
       );
       this.applyRenderer();
     } catch (error) {
@@ -354,6 +475,13 @@ export class FilterEngine {
         'unavailable',
         `Audio filtering unavailable: ${this.session.captionIssue ?? 'no English dialogue/CC track for this episode version. Translations and signs tracks cannot time the English dub.'} Try enabling available English CC in the player, then Retry.`,
       );
+    } else if (this.timelineProblem(dialogueTrack(this.session)!.id)) {
+      this.audio = this.timelineProblem(dialogueTrack(this.session)!.id)!;
+    } else if (this.timingProblems.has(dialogueTrack(this.session)!.id)) {
+      this.audio = status(
+        'unavailable',
+        'Audio filtering unavailable: English CC cue timing disagrees with playback. Subtitle filtering can continue; timestamp links for this track are disabled. Use Timing correction (this episode) in the popup only after checking a constant offset at two spoken lines.',
+      );
     } else if (!this.timelineReady) {
       this.audio = status(
         'loading',
@@ -367,7 +495,11 @@ export class FilterEngine {
     } else
       this.audio = status(
         'active',
-        'Matching English CC loaded. Complete caption cues are silenced; surrounding dialogue may also be silenced.',
+        dialogueTrack(this.session)!.timeline?.kind === 'stitched-main'
+          ? `Matching English CC loaded. Playback metadata adds ${automaticOffset(dialogueTrack(this.session)!.timeline)} seconds before this episode's captions${this.timingOffsets.get(dialogueTrack(this.session)!.id) ? `; additional manual correction ${this.timingOffsets.get(dialogueTrack(this.session)!.id)} seconds` : ''}. Complete cues are silenced; surrounding dialogue may also be silenced.`
+          : this.captionOffset(dialogueTrack(this.session)!.id)
+            ? `Matching English CC loaded with a manual ${this.captionOffset(dialogueTrack(this.session)!.id) > 0 ? '+' : ''}${this.captionOffset(dialogueTrack(this.session)!.id)} second correction for this episode. Whole cues are silenced. Verify synchronization; the correction resets on episode changes.`
+            : 'Matching English CC loaded. Complete caption cues are silenced; surrounding dialogue may also be silenced.',
       );
     const selected = this.session?.tracks.find((track) => track.id === this.renderer?.trackId);
     if (this.rendererProblem) this.subtitles = this.rendererProblem;
@@ -399,21 +531,26 @@ export class FilterEngine {
       );
   }
   private tick(): void {
+    const dialogue = this.session && dialogueTrack(this.session);
+    if (dialogue && this.timelineProblem(dialogue.id)) this.scheduler?.setIntervals([]);
     const audioIds = this.scheduler?.tick() ?? [];
     if (this.rebuilding) return;
-    const active = this.occurrences.filter(
-      (value) =>
-        !value.ignored &&
-        value.time <= (this.media?.currentTime ?? -1) &&
-        value.endTime > (this.media?.currentTime ?? -1),
-    );
+    // DOM renderers report the exact cue they actually changed. Their display
+    // clock can differ from the media clock; this must never retime audio or
+    // falsely mark a different, merely time-active cue as text-censored.
+    const displayed = this.renderer?.censoredCues?.();
+    const time = this.media?.currentTime ?? -1;
     const textIds =
       this.subtitles.phase === 'active'
-        ? active
+        ? this.occurrences
             .filter(
               (value) =>
+                !value.ignored &&
                 value.track === this.renderer?.trackId &&
-                (!this.renderer.censoredCues || this.renderer.censoredCues().has(value.cue)),
+                (displayed
+                  ? displayed.has(value.cue)
+                  : value.time + this.captionOffset(value.track) <= time &&
+                    value.endTime + this.captionOffset(value.track) > time),
             )
             .map((value) => value.id)
         : [];
@@ -430,9 +567,19 @@ export class FilterEngine {
     const occurrence = this.occurrences.find((value) => value.id === id);
     if (!this.media || !this.seeker || !occurrence || !this.session)
       throw new Error('This occurrence no longer belongs to the current episode.');
+    if (this.timingProblems.has(occurrence.track) || this.timelineProblem(occurrence.track))
+      throw new Error(
+        'This caption track has unverified playback timing. Use the player timeline.',
+      );
+    const playbackTime = occurrence.time + this.captionOffset(occurrence.track);
+    const timeline = this.session.tracks.find((track) => track.id === occurrence.track)?.timeline;
+    const lower = timeline?.kind === 'stitched-main' ? timeline.start : 0;
+    const upper = timeline?.kind === 'stitched-main' ? timeline.end : 86400;
+    if (playbackTime < lower || playbackTime >= upper)
+      throw new Error('The corrected timestamp is outside the supported playback timeline.');
     this.scheduler?.release();
     return this.seeker
-      .seek(Math.max(0, occurrence.time - this.state.settings.beforeMs / 1000))
+      .seek(Math.max(lower, playbackTime - this.state.settings.beforeMs / 1000))
       .then(() => this.tick());
   }
   hasOccurrence(id: string): boolean {
@@ -460,8 +607,26 @@ export class FilterEngine {
         ...value,
         audioCensored: this.censored.get(value.id)?.audio ?? false,
         textCensored: this.censored.get(value.id)?.text ?? false,
+        timingUnreliable:
+          this.timingProblems.has(value.track) || !!this.timelineProblem(value.track),
+        playbackTime: this.playbackTime(value),
       })),
       total: this.occurrences.length,
+      audioTiming: {
+        track:
+          this.session &&
+          mayFilterAudio(this.session, this.state) &&
+          !japanese(this.session.audioLanguage) &&
+          this.timelineReady &&
+          (!dialogueTrack(this.session) || !this.timelineProblem(dialogueTrack(this.session)!.id))
+            ? (dialogueTrack(this.session)?.id ?? null)
+            : null,
+        offset:
+          this.session && dialogueTrack(this.session)
+            ? (this.timingOffsets.get(dialogueTrack(this.session)!.id) ?? 0)
+            : 0,
+        automaticOffset: this.session ? automaticOffset(dialogueTrack(this.session)?.timeline) : 0,
+      },
       trackSummary:
         this.session?.tracks
           .map(

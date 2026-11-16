@@ -16,6 +16,7 @@ export function mergeIntervals(intervals: readonly Interval[]): Interval[] {
 }
 export interface Media extends EventTarget {
   currentTime: number;
+  duration?: number;
   playbackRate: number;
   paused: boolean;
   seeking: boolean;

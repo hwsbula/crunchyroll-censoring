@@ -6,6 +6,8 @@ Applies to version 0.1.7 and later. CrunchyRoll Censoring is an independent exte
 
 The extension uses the active Crunchyroll watch-page identity, current episode/version, audio/subtitle language metadata, English captions and playback state solely to filter the selected episode and provide occurrence review, seeking and Ignore/Unignore. It observes page-initiated metadata requests and reads player-supplied English caption URLs with ordinary HTTPS/CORS and `credentials: omit`. It does not use Chrome's history API or create a permanent viewing-history database.
 
+Manual episode timing corrections are held only in the current player frame, reset on episode navigation or reload, and are excluded from saved settings, backups and Chrome Sync.
+
 Complete caption documents, original cue text and occurrence/action logs stay in the current player frame's memory. They are discarded on episode/player invalidation or page closure. The popup/action list is bounded to 1,000 entries; in-memory scheduling is limited to 20,000 matches. Signed caption-resource URLs are only retained transiently in the local player integration, never persisted or logged. The extension does not read cookies, authorization headers, access tokens, passwords, account email or identity, protected media, microphone input or DRM content, and does not bypass subscriptions or access controls.
 
 Custom terms/preferences are passed to the extension's local filtering integration in the current page execution context. They are not secrets; do not enter passwords or other sensitive information as terms. Page/extension messages are validated and expose no general privileged fetch or execution interface. Executable extension code is packaged locally.

@@ -19,7 +19,7 @@ Choose which English words and phrases are censored while watching Crunchyroll o
 - Search 1,161 built-in words/phrases in six categories, enable or disable categories and add custom literal terms.
 - Carry preferences and word choices between installations with Chrome settings sync, or export/import a settings backup.
 
-Read the separate audio and subtitle coverage statuses before watching. Some English dubs do not have matching captions: audio filtering is unavailable for those episodes. Whole-cue muting can also silence surrounding dialogue. Hardcoded subtitles and unsupported renderers cannot be safely filtered. The vocabulary is broad, not exhaustive; some terms have harmless meanings. This is an integration preview, not a guarantee that every episode or expression will be censored.
+Read the separate audio and subtitle coverage statuses before watching. Some English dubs do not have matching captions: audio filtering is unavailable for those episodes. Whole-cue muting can also silence surrounding dialogue. If caption-file times differ from playback, a manually verified per-episode timing correction is available; it cannot solve changing drift and resets for each episode. Hardcoded subtitles and unsupported renderers cannot be safely filtered. The vocabulary is broad, not exhaustive; some terms have harmless meanings. This is an integration preview, not a guarantee that every episode or expression will be censored.
 
 Caption processing stays on your device. There are no ads, analytics, microphone recording, cloud transcription or extension account. When enabled, Chrome may sync your preferences and custom words through your Chrome account. Episode-specific Ignore exceptions, subtitle text and playback logs are not synced.
 

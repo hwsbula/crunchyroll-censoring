@@ -1,4 +1,4 @@
-import { record, validOccurrenceId, LIMITS } from '../core/settings.ts';
+import { record, validOccurrenceId, LIMITS, parseTimingOffset } from '../core/settings.ts';
 import type { PlayerSnapshot } from '../core/types.ts';
 import { siteUrl } from '../integration/metadata.ts';
 export interface Target {
@@ -79,6 +79,23 @@ export function parseTarget(value: unknown): Target {
 }
 export function parseSnapshot(value: unknown): PlayerSnapshot & { hasMedia: boolean } {
   const raw = record(value);
+  if (raw.audioTiming !== undefined) {
+    const timing = record(raw.audioTiming);
+    if (
+      timing.track !== null &&
+      (typeof timing.track !== 'string' || !/^[a-f0-9]{64}$/.test(timing.track))
+    )
+      throw new Error('Invalid timing correction track.');
+    parseTimingOffset(timing.offset);
+    if (
+      timing.automaticOffset !== undefined &&
+      (typeof timing.automaticOffset !== 'number' ||
+        !Number.isFinite(timing.automaticOffset) ||
+        timing.automaticOffset < 0 ||
+        timing.automaticOffset > 86400)
+    )
+      throw new Error('Invalid automatic caption offset.');
+  }
   if (
     typeof raw.instance !== 'string' ||
     !/^[a-f0-9-]{36}$/.test(raw.instance) ||
@@ -141,6 +158,17 @@ export function parseSnapshot(value: unknown): PlayerSnapshot & { hasMedia: bool
       throw new Error('Invalid occurrence timing.');
     for (const key of ['ignored', 'audioCensored', 'textCensored'])
       if (typeof row[key] !== 'boolean') throw new Error('Invalid occurrence flags.');
+    if (row.timingUnreliable !== undefined && typeof row.timingUnreliable !== 'boolean')
+      throw new Error('Invalid occurrence timing flag.');
+    if (
+      row.playbackTime !== undefined &&
+      row.playbackTime !== null &&
+      (typeof row.playbackTime !== 'number' ||
+        !Number.isFinite(row.playbackTime) ||
+        row.playbackTime < 0 ||
+        row.playbackTime > 86400)
+    )
+      throw new Error('Invalid corrected timestamp.');
   }
   return raw as unknown as PlayerSnapshot & { hasMedia: boolean };
 }

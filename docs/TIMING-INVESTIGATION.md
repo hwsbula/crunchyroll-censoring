@@ -1,0 +1,96 @@
+# Caption timing investigation — November 16, 2026
+
+**Status: the metadata investigation identified a 19.061-second opening promo omitted by the old extension's source-to-playback conversion. Version 0.1.10 implements a guarded mapping for this supported layout; corrected live audio remains unverified.**
+
+## Final supplied evidence and implementation
+
+The user confirmed MAIN's English track is `role: closed_caption`, `format: external`, `language: en-US`, with an `externalTextUrl` **identical** to the legacy top-level en-US caption URL. Thus different CC resources are ruled out for this session. The en-US ASS subtitle and burned-in subtitle entries are separate roles/rendering choices, not alternate English-dub CC timing sources. Signed URLs and account/session identifiers from the supplied response were not copied into code, fixtures, logs or this report, and were not requested or fetched.
+
+Together with the actual 19.061-second timeline-included promo, matching native/UI clocks at 10:00 and headerless VTT, the evidence supports the missing MAIN-to-playback translation as the cause of the approximately 20-second discrepancy. It is not a universal 20-second offset. The whole cue can begin before the particular profane word, and UI timestamps discard fractional seconds. Exact corrected acoustic onsets still require live playback verification.
+
+The implementation selects MAIN external text resources and retains source cues separately from the mapping. It accepts only contiguous timeline-included promo/logo prefixes followed by one MAIN; checks finite native duration against the described timeline; adds MAIN.start to scheduled intervals, shown timestamps and seeks; clamps padding to MAIN; and resets on episode changes. Unsupported layouts, timestamp-mapped VTT and out-of-range cues cannot be manually forced into audio filtering. Original subtitle rendering, per-occurrence IDs and Japanese-audio protections remain. Manual correction is now an additional adjustment, normally zero. No API permissions, backend, cloud transcription, DRM access or durable viewing data were added.
+
+Focused synthetic unit/browser regressions cover the repaired contract. The remaining generic WebVTT timestamp-map and distinct SDK/media-clock cases below are outside this supported automatic layout. `scripts/diagnostics/reproduce-timing.mjs` now asserts repaired MAIN-resource selection and locale disambiguation while retaining those unresolved generic reproductions. See RELEASE.md and PRODUCT.md for the final gate results.
+
+The following sections preserve the investigation sequence and 0.1.9 findings; references to pending metadata describe the evidence available at that earlier stage.
+
+## Evidence and the important correction to earlier advice
+
+The user reports source-list timestamps 2:30 and 8:52 for lines heard at 2:50 and 9:12. They confirmed that the latter are the times in **Crunchyroll's playback controls**, that the mismatch survives a fresh reload, and that it occurs both with and without Skip Intro. Text is displayed at the right moment and censored successfully.
+
+**User measurement:** at a displayed 10:00, `video.currentTime` returned **600.75**. Interpreting the displayed time as minute:second, its floor is 600: the media and UI clocks agree within the UI's one-second rounding at this sample. Thus a 20-second UI-versus-media difference does not explain that instant. The separate-clock reproductions remain general implementation weaknesses, but should not be presented as the demonstrated cause of this episode.
+
+**Selected track and actual file header:** the popup reports `captions en-US (VTT), subtitles en-US (ASS)`, and the user selected **English [CC]**. The supplied beginning of the VTT is `WEBVTT`, a blank line, cue identifier `1`, and `00:01:30.215 --> 00:01:33.552`. It continues with numbered ordinary cues through cue 15. There is **no `X-TIMESTAMP-MAP` header in this supplied file beginning**. Consequently, ignored header mapping is not the explanation for this resource. There is no evidence of multiple loaded CC language variants in the supplied coverage information either. We have not yet compared this resource with the player's segment-selected CC resource. No transcript or signed caption URL is saved in this report or fixtures.
+
+**Actual playback segments supplied by the user:**
+
+| Element | Start (seconds) | End (seconds) | `track` | `timeline` |
+| ------- | --------------- | ------------- | ------- | ---------- |
+| `promo` | 0               | 19.061        | false   | true       |
+| `main`  | 19.061          | 1439.063      | true    | true       |
+
+The promo has no text/audio tracks in the supplied excerpt. The MAIN element has text/audio tracks; the first shown text descriptor is an en-US `subtitle` with `format: burned_in`. That is not a CC descriptor and must not drive English-dub timing. The MAIN CC entry and its relationship to the legacy VTT are still being checked. The promo's `timeline: true` agrees with its inclusion in the displayed timeline. Its `track: false` does not remove it from that timeline.
+
+This establishes a real 19.061-second prefix, not an inferred universal 20-second delay. If the downloaded CC is relative to the MAIN content, its source time must be translated by that prefix on this continuous media/UI timeline. For illustration, the supplied first cue at 90.215 would then start at **109.276** (1:49.276). That is a prediction to verify, not an observed onset. Likewise, depending on source fractions, a cue displayed as 2:30 can land at a player time displayed as 2:50 after adding 19.061. The existing rounded examples are consistent with the prefix but cannot determine it precisely. Refreshing preserves this response structure, and Skip Intro does not remove an earlier promo from the timeline; neither action establishes the caption time origin.
+
+The two affected-line observations establish a +20-second difference between the listed source time and the player UI at two points, 382 seconds apart. They do **not** measure the underlying video element's time at those exact cue onsets; the later 10:00 sample supports agreeing UI/media clocks. The earlier recommendation to add +20 to both audio and links was premature: those operations can use different clocks. Do not treat 0.1.9's combined manual offset as a general fix or choose it from UI timestamps alone.
+
+Let C be source cue time, M the underlying video element's `currentTime`, and P the player UI/SDK timeline. The report gives P − C = 20. Audio needs the C → M mapping; SDK seeking needs C → P, and seek completion must use the correct target clock. P − C does not determine M − C.
+
+| Synthetic example at the first line | Implication                                                                                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C=150, P=170, M=170                 | A +20 media correction is consistent with this sample; resource identity and cue onset still need verification.                                                           |
+| C=150, P=170, M=150                 | Caption and media clocks already agree. Adding +20 to audio moves a correctly timed mute away from this cue. Timestamp display/seeking still need a different conversion. |
+
+Neither example is a live measurement. Both fit the two initially reported numbers, but the later 10:00 native-clock sample supports the first scenario rather than a persistent UI/media discrepancy. A constant correction still does not establish the actual source or mapping contract.
+
+## Confirmed code findings
+
+1. **Cue timestamps become playback timestamps without a mapping.** `src/core/captions.ts:4` parses ordinary timestamps correctly. `src/core/engine.ts:66` copies `cue.start` into the occurrence; `intervalsFor` applies only user padding/manual correction. `src/core/scheduler.ts:92` compares those intervals directly with `media.currentTime`. No production mapping from source clock to media clock is established.
+2. **WebVTT timing metadata is ignored.** `src/core/captions.ts:112` skips non-cue header lines, including `X-TIMESTAMP-MAP`. A synthetic file with an explicit timestamp map and the same file without it both produce starts 150 and 532. This is a reproducible missing capability, **not the cause for the supplied headerless VTT resource**. In other resources a mapping also needs the media timeline context: blindly adding MPEGTS/90,000 is not generally correct.
+3. **SDK seek requests and completion checks assume identical clocks.** `src/integration/seek.ts` forwards requested seconds to the site's registered Media Session `seekto` handler. `src/core/seeker.ts:45` nevertheless requires native `currentTime` to equal that same number. A synthetic SDK that legitimately maps presentation 170 to media 150 completes its seek, but the extension reports timeout. The existing regression models did not exercise separate SDK/media clocks.
+4. **Multiple English CC tracks are not disambiguated for audio.** `src/core/engine.ts:44` chooses the first current-version English `captions` entry. Reversing two eligible en-GB/en-US entries changes the selected audio timing source. The DOM renderer separately requires a unique selected track. The popup aggregates matches from loaded English tracks without showing a track label per row. This is a possible independent asset-selection problem; we have not observed multiple CC variants in this user's playback response.
+5. **Successful text replacement cannot validate any audio clock.** The 0.1.8 fallback identifies an exact unique complete cue by text within the selected track. That explains how text censorship can work despite timing disagreement. The action log records applied muting/text actions, not acoustic verification that the intended spoken word was silenced.
+6. **The adapter ignores segment-specific caption resources and timing metadata.** `src/integration/metadata.ts:66` reads only the top-level `captions` and `subtitles` dictionaries. `observeResponse` passes their resources to `loadSession` and does not retain `stitchedElements`. In the inspected player copy, valid stitched elements take precedence over those legacy dictionaries, and the subtitle menu reads text tracks from the MAIN element. A synthetic payload containing both a legacy VTT URL and a different MAIN-element VTT URL makes the extension select the legacy URL; a segment-only payload yields no resources. Changing the segment's start also has no effect on the adapter output. The user's actual response now confirms that this episode uses stitched elements and MAIN begins at 19.061. Resource identity and the CC time origin still need confirmation before applying that number. **A segment's `start` must not simply be added to caption times without establishing its semantics and the selected media timeline.**
+
+Normal time formatting and seconds conversion were checked: 00:02:30.000 → 150 → 2:30; 00:08:52.000 → 532 → 8:52. The scheduler uses media time rather than an accumulating wall-clock counter. Padding is milliseconds, not 20 seconds. There is no hardcoded 20-second production offset. The observed stable difference is consistent with an additive clock/source discrepancy, but does not establish its origin or rule out changes elsewhere in the episode.
+
+## Player and standards evidence
+
+The public [CrOptix Katamari source](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L3973) computes elapsed text from `playheadData.timelineTime`. Its skip logic uses `streamTime`, and its timeline code converts native buffered media time through `manifest.stitchedElements`. The [Media Session handler](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L4731) also publishes `timelineTime`. This is a modified third-party copy, not an independently captured current production bundle. Its Git blob `1e6c6f5cfa4334da4125865896a8951d5df5f0ba` matches the inspected local copy. The user's earlier pasted DOM independently contains the same timestamp element and timeline control, but does not serialize the video element's runtime `currentTime`.
+
+That copy [chooses playback API v4](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L16033) when its stitched-elements feature flag is enabled. Its [response parser](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L16111) first parses `stitchedElements`: `type`, `start`, `end`, `track`, `timeline`, `textTracks` and `audioTracks`. Text descriptors carry `role`, `format`, `language` and optionally `externalTextUrl`/`videoUrl`. [Role/format mappings](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L15662) distinguish `closed_caption`/`caption` from `subtitle`, and `external` from embedded/burned-in rendering. Only when no valid stitched elements were parsed does it [fall back to top-level captions/subtitles](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L16259), constructing a MAIN element starting at zero. The [available-text-track selector](https://github.com/stratumadev/croptix/blob/52b7436b310802affd27db93d3161ea7e8f2aa00/src/utils/katamari.js#L16774) reads the MAIN element. These inspected contracts justified checking the response shape; the user subsequently confirmed that shape and a 19.061-second promo in their actual response. The modified source is still not proof of every production implementation detail.
+
+[Bitmovin's synchronization documentation](https://developer.bitmovin.com/playback/docs/why-are-my-webvtt-subtitle-tracks-not-in-sync-with-the-video) describes caption-to-stream timestamp mapping. [RFC 8216 section 3.5](https://datatracker.ietf.org/doc/html/rfc8216#section-3.5) defines the WebVTT-to-MPEG timestamp association. [Shaka's VTT parser](https://shaka-project.github.io/shaka-player/docs/api/lib_text_vtt_text_parser.js.html) applies a time context and HLS mapping when appropriate. These establish mechanisms that our parser does not model; they do not establish which player/library/protocol/mapping this episode uses.
+
+Direct live access in this environment remained blocked: the Cloud browser failed opening the episode with “Browser Use could not read requirements”; the shell previously returned proxy CONNECT 403. Web search could read only the public unsupported-browser shell, not playback metadata, captions or a running media element. No credentials, alternate playback versions, protected media, authentication endpoints or DRM were accessed.
+
+## Reproduction and verification
+
+From the repository root:
+
+```bash
+node scripts/diagnostics/reproduce-timing.mjs
+PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright node scripts/diagnostics/verify-clock.mjs
+npx eslint scripts/diagnostics --max-warnings 0
+```
+
+The first command uses the actual 0.1.9 parser, scheduler, seeker and resource/track selectors with **synthetic** inputs. It confirmed ignored timestamp mapping; correct numeric formatting; source-timed muting at media 150.1 versus no mute after +20 in the hypothetical separate-clock case; a seek-completion timeout despite the SDK reaching its presentation target; order-dependent English CC selection; and ignored segment-specific caption resources/segment start. These are characterization checks of unresolved behavior, **not passing acceptance tests for a repair**.
+
+The second command passed in Chromium: distinct/equal clocks, unchanged media/DOM/native-track state, excluded dialogue/labels, missing UI clock, and ambiguous/missing video. ESLint passed for all diagnostic scripts. `npm run check` also passed formatting, lint, strict TypeScript, all 53 existing unit tests, build and manifest validation. The rebuilt production files remain byte-identical to the existing 0.1.9 ZIP; the 25-scenario extension browser suite was not rerun for these documentation/diagnostic-only changes. This helper is not imported into `src/`, copied into `public/`, or shipped by the build. It does not fetch, install hooks, write storage, record media, modify subtitles, change playback or transmit data.
+
+## The next decisive live measurement
+
+Pause on one of the affected lines. Record the time in the player and run this read-only Console expression in the document containing the video:
+
+```js
+document.querySelector('video')?.currentTime;
+```
+
+Compare at two separated affected cues. The more complete optional [clock snapshot](../scripts/diagnostics/clock-snapshot.js) returns bounded numeric media/UI/slider/native-active-cue data without URLs, credentials, caption text or persistent logs. A missing native text track is not evidence that Crunchyroll has no captions; its renderer may be independent of native text tracks. A paused sample cannot test audio muting, since our scheduler releases extension muting on pause. UI timestamps are rounded and can briefly lag; a single subsecond difference is not a confirmed mapping.
+
+The user's native clock agrees with the player UI at 10:00; the supplied VTT beginning has no timestamp-map header; and the actual playback response has a 19.061-second timeline-included promo followed by MAIN. The pending check is the MAIN English **CC** descriptor's role/format/language, whether it has `externalTextUrl`, and whether that resource equals the legacy top-level CC resource (report only an equality boolean). A different asset would require selecting the correct source; an identical asset would focus the repair on the segment-to-media mapping. An embedded CC descriptor would mean the visible player cues may come from the media rather than the downloaded standalone VTT. Do not infer any of these from the supplied burned-in subtitle descriptor.
+
+Compare only clear-text metadata already fetched by the authorized player; do not collect cookies, headers, signed URLs, full playback responses, protected segments or licenses. If cue time already agrees with media time while audio escapes, inspect the active media element and actual muted state during playback as a separate audio-control failure. The supplied file beginning does not include the two affected lines, so their exact cue starts in that particular response remain to be compared if resource identity is ambiguous.
+
+A completed repair must map C → M for precomputed mute intervals and C → P for displayed timestamps/SDK seeks, preserve current episode/track identity, and invalidate mappings at discontinuities. It must retain the existing subtitle behavior and Japanese-audio protections, work before cue display, and be verified on the reported episode before claiming the root cause or publishing a production timing fix.

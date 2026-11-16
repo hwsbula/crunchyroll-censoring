@@ -1,4 +1,4 @@
-import { activeTerms, parseState } from './core/settings.ts';
+import { activeTerms, parseState, parseTimingOffset } from './core/settings.ts';
 import { findMatches, redact } from './core/matcher.ts';
 import type { Occurrence, SavedState } from './core/types.ts';
 import { send } from './shared/protocol.ts';
@@ -10,6 +10,8 @@ let player: RoutedPlayer | null = null;
 let tabId: number | null = null;
 let busy = false;
 let signature = '';
+let timingTarget = '';
+let timingDirty = false;
 function setControlState(): void {
   if (!state) return;
   element<HTMLInputElement>('#enabled').checked = state.settings.enabled;
@@ -35,7 +37,11 @@ function context(row: Occurrence): string {
 function renderOccurrences(): void {
   const rows = player?.snapshot.occurrences ?? [];
   const now = player?.snapshot.time ?? 0;
-  const nextSignature = JSON.stringify([rows, state?.settings, rows.map((row) => now < row.time)]);
+  const nextSignature = JSON.stringify([
+    rows,
+    state?.settings,
+    rows.map((row) => now < (row.playbackTime ?? row.time)),
+  ]);
   if (signature === nextSignature) return;
   signature = nextSignature;
   const list = element<HTMLOListElement>('#occurrences');
@@ -49,12 +55,24 @@ function renderOccurrences(): void {
     const li = document.createElement('li');
     li.classList.toggle('ignored', row.ignored);
     const timestamp = document.createElement('button');
+    const playbackTime = row.playbackTime === undefined ? row.time : row.playbackTime;
+    const unreliable = row.timingUnreliable || playbackTime === null;
+    const shownTime = playbackTime ?? row.time;
     timestamp.type = 'button';
     timestamp.className = 'timestamp';
-    timestamp.textContent = time(row.time);
+    timestamp.textContent = unreliable ? `Cue ${time(row.time)}` : time(shownTime);
     timestamp.dataset.action = 'seek';
     timestamp.dataset.id = row.id;
-    timestamp.setAttribute('aria-label', `Seek to ${time(row.time)}`);
+    timestamp.disabled = !!unreliable;
+    timestamp.title = unreliable
+      ? 'Caption-file time; playback timing is unverified. Seeking is disabled.'
+      : `Caption-file time: ${time(row.time)}. Playback time: ${time(shownTime)}.`;
+    timestamp.setAttribute(
+      'aria-label',
+      unreliable
+        ? `Caption-file time ${time(row.time)}; playback timing unverified`
+        : `Seek to ${time(shownTime)}`,
+    );
     const details = document.createElement('div');
     details.className = 'details';
     const term = document.createElement('span');
@@ -66,9 +84,11 @@ function renderOccurrences(): void {
       ? 'Ignored'
       : row.audioCensored || row.textCensored
         ? `Censored · ${[row.audioCensored ? 'audio' : '', row.textCensored ? 'text' : ''].filter(Boolean).join(' + ')}`
-        : now < row.time
-          ? 'Upcoming · detected'
-          : 'Detected · not censored';
+        : unreliable
+          ? 'Detected · timing unverified'
+          : now < shownTime
+            ? 'Upcoming · detected'
+            : 'Detected · not censored';
     const excerpt = document.createElement('p');
     excerpt.className = 'context';
     excerpt.textContent = context(row);
@@ -79,7 +99,7 @@ function renderOccurrences(): void {
     ignore.dataset.action = 'ignore';
     ignore.dataset.id = row.id;
     ignore.textContent = row.ignored ? 'Unignore' : 'Ignore';
-    ignore.setAttribute('aria-label', `${ignore.textContent} occurrence at ${time(row.time)}`);
+    ignore.setAttribute('aria-label', `${ignore.textContent} occurrence at ${time(shownTime)}`);
     li.append(timestamp, details, ignore);
     fragment.append(li);
   }
@@ -100,6 +120,24 @@ function renderOccurrences(): void {
 }
 function renderPlayer(): void {
   const snapshot = player?.snapshot;
+  const correction = snapshot?.audioTiming;
+  const target = JSON.stringify([
+    snapshot?.instance,
+    snapshot?.episode,
+    snapshot?.version,
+    correction?.track,
+  ]);
+  if (target !== timingTarget) {
+    timingTarget = target;
+    timingDirty = false;
+  }
+  const input = element<HTMLInputElement>('#timing-offset');
+  if (!timingDirty) input.value = String(correction?.offset ?? 0);
+  input.disabled = !correction?.track;
+  element<HTMLButtonElement>('#timing-apply').disabled = !correction?.track;
+  element('#timing-status').textContent = !correction?.track
+    ? 'Matching English-dub CC required.'
+    : `Playback metadata: +${correction.automaticOffset ?? 0} seconds. Additional manual correction: ${correction.offset > 0 ? '+' : ''}${correction.offset} seconds. This episode and tab only.`;
   element('#episode').textContent = snapshot?.episode
     ? `Episode ${snapshot.episode} · version ${snapshot.version}`
     : 'No connected Crunchyroll episode';
@@ -194,6 +232,23 @@ element('#occurrences').addEventListener('click', (event) => {
 element('#retry').addEventListener('click', () => {
   void perform(async () => {
     if (player) await send({ type: 'player:action', target: player.target, action: 'retry' });
+  });
+});
+element('#timing-offset').addEventListener('input', () => {
+  timingDirty = true;
+});
+element('#timing-apply').addEventListener('click', () => {
+  const target = player?.target;
+  const track = player?.snapshot.audioTiming?.track;
+  if (!target || !track) return;
+  void perform(async () => {
+    const input = element<HTMLInputElement>('#timing-offset');
+    if (!input.value.trim() || !input.checkValidity())
+      throw new Error('Enter a correction from -300 to +300 seconds.');
+    const offset = parseTimingOffset(Number(input.value));
+    const submitted = input.value;
+    await send({ type: 'player:action', target, action: 'timing', id: track, offset });
+    if (input.value === submitted) timingDirty = false;
   });
 });
 element('#settings').addEventListener('click', () => {
