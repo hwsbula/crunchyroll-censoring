@@ -1,0 +1,47 @@
+name: Prepare v0.1.10 release tag
+
+on:
+  push:
+    branches: [release/prepare-v0.1.10]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-crunchyroll-v0.1.10
+  cancel-in-progress: false
+
+jobs:
+  prepare-tag:
+    if: github.repository == 'hwsbula/crunchyroll-censoring' && github.ref == 'refs/heads/release/prepare-v0.1.10'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: hwsbula/crunchyroll-censoring
+      RELEASE_TAG: v0.1.10
+      SOURCE_SHA: d1d95caf87881630563a574c5ef88489cef487b0
+    steps:
+      - name: Create the missing tag at the tested main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$SOURCE_SHA"
+          for path in package.json public/manifest.json; do
+            version="$(gh api "repos/$GH_REPO/contents/$path?ref=$SOURCE_SHA" --jq '.content' | base64 --decode | jq -er '.version')"
+            test "v$version" = "$RELEASE_TAG"
+          done
+
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release-ref.json" 2> "$RUNNER_TEMP/release-ref-error.txt"; then
+            jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha' "$RUNNER_TEMP/release-ref.json" > /dev/null
+            echo "Existing release tag already points to the tested commit."
+          else
+            if ! grep -q '(HTTP 404)' "$RUNNER_TEMP/release-ref-error.txt"; then
+              cat "$RUNNER_TEMP/release-ref-error.txt" >&2
+              exit 1
+            fi
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$SOURCE_SHA" --jq '.ref'
+          fi
