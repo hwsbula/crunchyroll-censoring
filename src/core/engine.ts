@@ -401,19 +401,19 @@ export class FilterEngine {
   private tick(): void {
     const audioIds = this.scheduler?.tick() ?? [];
     if (this.rebuilding) return;
-    const active = this.occurrences.filter(
-      (value) =>
-        !value.ignored &&
-        value.time <= (this.media?.currentTime ?? -1) &&
-        value.endTime > (this.media?.currentTime ?? -1),
-    );
+    // DOM renderers report the exact cue they actually changed. Their display
+    // clock can differ from the media clock; this must never retime audio or
+    // falsely mark a different, merely time-active cue as text-censored.
+    const displayed = this.renderer?.censoredCues?.();
+    const time = this.media?.currentTime ?? -1;
     const textIds =
       this.subtitles.phase === 'active'
-        ? active
+        ? this.occurrences
             .filter(
               (value) =>
+                !value.ignored &&
                 value.track === this.renderer?.trackId &&
-                (!this.renderer.censoredCues || this.renderer.censoredCues().has(value.cue)),
+                (displayed ? displayed.has(value.cue) : value.time <= time && value.endTime > time),
             )
             .map((value) => value.id)
         : [];

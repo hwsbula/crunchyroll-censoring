@@ -679,6 +679,94 @@ test('Bitmovin overlay: verified English CC, no painted flashes, Ignore/Unignore
   }
 });
 
+test('Bitmovin overlay: exact displayed cue identity survives renderer timing differences without shifting audio', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?caption-delay=2.5');
+    await media(page, 3.5);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    const captions = page.locator('.bitmovinplayer-container ul');
+    await expect(captions).toHaveText('That **** class is full of ****!');
+    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-reason')).toContainText('timing differs');
+    const samples = await page.evaluate(async () => {
+      const values: string[] = [];
+      for (let i = 0; i < 30; i++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        values.push(document.querySelector('.bitmovinplayer-container ul')!.textContent!);
+      }
+      return values;
+    });
+    expect(samples.every((value) => value === 'That **** class is full of ****!')).toBe(true);
+    const rows = (await readPlayer(popup)).snapshot.occurrences;
+    expect(rows.slice(0, 2).every((row) => row.textCensored && !row.audioCensored)).toBe(true);
+    expect(rows[2]!.textCensored).toBe(false);
+    // Ignore remains tied to the source cue, despite a different media clock.
+    await popup.locator('.ignore').nth(0).click();
+    await expect(captions).toHaveText('That damn class is full of ****!');
+    await popup.locator('.ignore').nth(0).click();
+    await expect(captions).toHaveText('That **** class is full of ****!');
+    await popup.locator('#enabled').uncheck();
+    await expect(captions).toHaveText('That damn class is full of shit!');
+    await popup.locator('#enabled').check();
+    await expect(captions).toHaveText('That **** class is full of ****!');
+    await media(page, 4, true);
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await media(page, 4);
+    await page.screenshot({ path: '/tmp/crunchyroll-caption-timing.png' });
+    await page.locator('#japanese').click();
+    await expect(page.locator('#fixture-state')).toHaveText('Ready: japanese');
+    await media(page, 3.5);
+    await expect(captions).toHaveText('That **** class is full of ****!');
+    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await page.getByRole('button', { name: 'Audio and subtitle language options' }).click();
+    await page
+      .getByRole('menu', { name: 'Subtitle and closed caption selection' })
+      .getByRole('menuitemradio', { name: 'Spanish', exact: true })
+      .click();
+    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(captions).toHaveText('That damn class is full of shit!');
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('Bitmovin overlay: timing drift never borrows a repeated cue exception, including layer replacement', async () => {
+  const extension = await launch();
+  try {
+    await extension.context.route('https://www.crunchyroll.com/fixture.vtt', (route) =>
+      route.fulfill({
+        contentType: 'text/vtt',
+        body: `${vtt}\nthree\n00:00:05.000 --> 00:00:06.500\nWhat the hell?\nWatch your step.\n`,
+      }),
+    );
+    const page = await startOverlay(extension.context, 'english', '?caption-delay=2.5');
+    await media(page, 3.5);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    const captions = page.locator('.bitmovinplayer-container ul');
+    await expect(captions).toHaveText('That **** class is full of ****!');
+    await expect(popup.locator('#occurrences li')).toHaveCount(4);
+    await popup.locator('.ignore').nth(3).click();
+    // At media time 5 the renderer displays source time 2.5, not source time 5.
+    // Identical text cannot establish which of those occurrence IDs is showing.
+    await media(page, 5);
+    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-reason')).toContainText('multiple cue identities');
+    await expect(captions).toHaveText('What the hell?\nWatch your step.');
+    await page.locator('#replace-layer').click();
+    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    const rows = (await readPlayer(popup)).snapshot.occurrences;
+    expect(rows.slice(2).every((row) => !row.textCensored)).toBe(true);
+    expect(rows[2]!.ignored).toBe(false);
+    expect(rows[3]!.ignored).toBe(true);
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
 test('Bitmovin overlay: Japanese audio, keyboard track selection, non-English originals and fullscreen', async () => {
   const extension = await launch();
   try {

@@ -4,6 +4,8 @@ const video = document.querySelector('video');
 const controls = document.querySelector('[data-testid="player-controls-root"]');
 const toggle = controls.querySelector('button');
 const parameters = new URL(location.href).searchParams;
+// Exercise independent renderer timing without changing the source cue times.
+const captionDelay = Number(parameters.get('caption-delay') || 0);
 let layer = document.querySelector('ul');
 let mode = 'english',
   selected = 'English [CC]',
@@ -164,9 +166,8 @@ async function begin(next, continuing = false) {
   document.querySelector('#fixture-state').textContent = `Ready: ${next}`;
 }
 function render() {
-  const active = cues.filter(
-    (cue) => cue.start <= video.currentTime && cue.end > video.currentTime,
-  );
+  const displayTime = video.currentTime - captionDelay;
+  const active = cues.filter((cue) => cue.start <= displayTime && cue.end > displayTime);
   const key = JSON.stringify([active, corrupt, empty]);
   if (key !== lastKey) {
     layer.replaceChildren();
@@ -175,7 +176,9 @@ function render() {
     if (!empty)
       for (const cue of active) {
         const li = document.createElement('li');
+        li.style.display = 'inline';
         li.style.whiteSpace = 'pre-line';
+        li.style.backgroundColor = 'rgb(0, 0, 0)';
         const text = corrupt ? 'Unassociated damn caption!' : cue.text;
         const parts = text.startsWith('That damn')
           ? ['That da', 'mn class is full of ', 'shit', '!']

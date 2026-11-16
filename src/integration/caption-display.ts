@@ -1,4 +1,4 @@
-import type { Match, Session, Track } from '../core/types.ts';
+import type { Cue, Match, Session, Track } from '../core/types.ts';
 
 export interface SubtitleSelection {
   language: string | null;
@@ -106,6 +106,72 @@ export function projectCaptionMatches(
     while (last + 1 < cue.map.length && cue.map[last + 1]![0] < match.end) last++;
     return { ...match, start: dom.map[first]![0], end: dom.map[last]![1] };
   });
+}
+
+export type DisplayCueMatch =
+  | { kind: 'matched'; cues: readonly Cue[]; matches: Match[]; timing: 'current' | 'text' }
+  | { kind: 'missing' }
+  | { kind: 'ambiguous' };
+
+// Text-only fallback: bind the complete displayed line to a unique cue in the
+// already selected track. Never infer a language, choose a different track,
+// invent audio timing, or transfer an Ignore choice between repeated lines.
+export class DisplayCueIndex {
+  private byText = new Map<string, Cue[]>();
+  private timingVerified = true;
+  constructor(cues: readonly Cue[]) {
+    for (const cue of cues) {
+      const text = compact(cue.text).text;
+      if (!text) continue;
+      const values = this.byText.get(text) ?? [];
+      values.push(cue);
+      this.byText.set(text, values);
+    }
+  }
+  match(
+    displayed: string,
+    active: readonly Cue[],
+    policy: ReadonlyMap<string, readonly Match[]>,
+  ): DisplayCueMatch {
+    const project = (cues: readonly Cue[], timing: 'current' | 'text'): DisplayCueMatch => {
+      if (!cues.length) return { kind: 'missing' };
+      let offset = 0;
+      const matches: Match[] = [];
+      for (const cue of cues) {
+        for (const match of policy.get(cue.key) ?? [])
+          matches.push({ ...match, start: match.start + offset, end: match.end + offset });
+        offset += cue.text.length + 1;
+      }
+      const projected = projectCaptionMatches(
+        cues.map((cue) => cue.text).join('\n'),
+        displayed,
+        matches,
+      );
+      return projected
+        ? { kind: 'matched', cues, matches: projected, timing }
+        : { kind: 'missing' };
+    };
+    const plans = active.length > 1 ? [active, ...active.map((cue) => [cue])] : [active];
+    let found: DisplayCueMatch = { kind: 'missing' };
+    for (const cues of plans) {
+      const candidate = project(cues, 'current');
+      if (candidate.kind !== 'matched') continue;
+      if (found.kind === 'matched') return { kind: 'ambiguous' };
+      found = candidate;
+    }
+    const candidates = this.byText.get(compact(displayed).text) ?? [];
+    if (found.kind === 'matched') {
+      // After observed drift, a repeated line cannot use the same unverified
+      // clock to borrow another occurrence's exception. A unique aligned cue
+      // establishes current-time association again (also after a seek).
+      if (found.cues.length === 1 && candidates.length === 1) this.timingVerified = true;
+      return this.timingVerified ? found : { kind: 'ambiguous' };
+    }
+    if (candidates.length > 1) return { kind: 'ambiguous' };
+    const fallback = project(candidates, 'text');
+    if (fallback.kind === 'matched') this.timingVerified = false;
+    return fallback;
+  }
 }
 
 export function redactDisplaySegments(
