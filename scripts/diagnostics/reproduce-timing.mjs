@@ -6,6 +6,7 @@ import { dialogueTrack } from '../../src/core/engine.ts';
 import { CueScheduler, MuteGate } from '../../src/core/scheduler.ts';
 import { MediaSeeker } from '../../src/core/seeker.ts';
 import { time } from '../../src/shared/ui.ts';
+import { englishResources } from '../../src/integration/metadata.ts';
 
 class Media extends EventTarget {
   currentTime = 150.1;
@@ -80,6 +81,44 @@ assert.equal(dialogueTrack(session).id, 'FIRST');
 const swapped = { ...session, tracks: [...session.tracks].reverse() };
 assert.equal(dialogueTrack(swapped).id, 'SECOND');
 
+// The inspected player source prefers stitchedElements[].textTracks over the
+// legacy top-level captions collection. This fixture models that observed schema,
+// not the live response or a proven meaning of segment.start for caption timing.
+const legacyUrl = 'https://example.test/legacy.vtt';
+const segmentUrl = 'https://example.test/segment.vtt';
+const playback = {
+  captions: { 'en-US': { language: 'en-US', format: 'vtt', url: legacyUrl } },
+  stitchedElements: [
+    {
+      id: 'synthetic-main',
+      type: 'main',
+      start: 20,
+      end: 1220,
+      track: true,
+      timeline: true,
+      textTracks: [
+        {
+          role: 'closed_caption',
+          format: 'external',
+          language: 'en-US',
+          externalTextUrl: segmentUrl,
+        },
+      ],
+      audioTracks: [],
+    },
+  ],
+};
+const resources = englishResources(playback);
+assert.equal(resources.length, 1);
+assert.equal(resources[0].url, legacyUrl);
+assert.notEqual(resources[0].url, playback.stitchedElements[0].textTracks[0].externalTextUrl);
+assert.deepEqual(englishResources({ stitchedElements: playback.stitchedElements }), []);
+const changedSegmentStart = {
+  ...playback,
+  stitchedElements: playback.stitchedElements.map((segment) => ({ ...segment, start: 40 })),
+};
+assert.deepEqual(englishResources(changedSegmentStart), resources);
+
 console.log(
   JSON.stringify(
     {
@@ -102,6 +141,14 @@ console.log(
       multipleEnglishCC: {
         originalOrderSelected: dialogueTrack(session).language,
         reversedOrderSelected: dialogueTrack(swapped).language,
+      },
+      stitchedElements: {
+        extensionSelectedLegacyResource: resources[0].url === legacyUrl,
+        mainSegmentResourceSelected: resources.some((resource) => resource.url === segmentUrl),
+        segmentOnlyResourceCount: englishResources({ stitchedElements: playback.stitchedElements })
+          .length,
+        changedSegmentStartAffectsSelection: false,
+        note: 'Synthetic schema only; segment.start is not asserted to be a caption offset.',
       },
     },
     null,
