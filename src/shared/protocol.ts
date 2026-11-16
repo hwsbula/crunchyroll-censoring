@@ -87,6 +87,14 @@ export function parseSnapshot(value: unknown): PlayerSnapshot & { hasMedia: bool
     )
       throw new Error('Invalid timing correction track.');
     parseTimingOffset(timing.offset);
+    if (
+      timing.automaticOffset !== undefined &&
+      (typeof timing.automaticOffset !== 'number' ||
+        !Number.isFinite(timing.automaticOffset) ||
+        timing.automaticOffset < 0 ||
+        timing.automaticOffset > 86400)
+    )
+      throw new Error('Invalid automatic caption offset.');
   }
   if (
     typeof raw.instance !== 'string' ||

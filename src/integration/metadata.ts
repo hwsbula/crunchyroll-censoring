@@ -1,5 +1,7 @@
 import { digest, english, LIMITS, record } from '../core/settings.ts';
 import { parseCaptions } from '../core/captions.ts';
+import { parseCaptionTimeline } from '../core/timeline.ts';
+import { stitchedMain } from './stitched.ts';
 import type { Session, Track } from '../core/types.ts';
 
 export const SITE_ORIGIN = 'https://www.crunchyroll.com';
@@ -62,8 +64,9 @@ export interface Resource {
   format: 'ass' | 'vtt';
   url: string;
   key: string;
+  timeline?: Track['timeline'];
 }
-export function captionResources(value: unknown, onlyEnglish = true): Resource[] {
+function legacyResources(value: unknown, onlyEnglish = true): Resource[] {
   const playback = record(value);
   const resources: Resource[] = [];
   for (const kind of ['captions', 'subtitles'] as const) {
@@ -85,6 +88,63 @@ export function captionResources(value: unknown, onlyEnglish = true): Resource[]
       resources.push({ language, kind, format, url: track.url, key });
       if (resources.length >= (onlyEnglish ? 6 : 60)) return resources;
     }
+  }
+  return resources;
+}
+export function captionResources(value: unknown, onlyEnglish = true): Resource[] {
+  const legacy = legacyResources(value, onlyEnglish);
+  const stitched = stitchedMain(value);
+  if (!stitched) return legacy;
+  // Unrecognized layouts may still supply exact English text for the DOM
+  // renderer, but must not inherit an unqualified legacy audio/seek clock.
+  if (!stitched.main || !Array.isArray(stitched.main.textTracks))
+    return legacy.map((resource) => ({ ...resource, timeline: { kind: 'unavailable' } }));
+  const resources: Resource[] = [];
+  for (const value of stitched.main.textTracks.slice(0, 80)) {
+    const track = record(value);
+    const kind = ['closed_caption', 'caption'].includes(String(track.role))
+      ? 'captions'
+      : track.role === 'subtitle'
+        ? 'subtitles'
+        : null;
+    if (
+      !kind ||
+      track.format !== 'external' ||
+      typeof track.language !== 'string' ||
+      !/^[a-z]{2,3}(?:[-_][a-z0-9]+)*$/i.test(track.language) ||
+      (onlyEnglish && !english(track.language)) ||
+      typeof track.externalTextUrl !== 'string' ||
+      track.externalTextUrl.length > 8192
+    )
+      continue;
+    const url = track.externalTextUrl;
+    const identity = resourceKey(url);
+    const previous = legacy.find(
+      (item) =>
+        item.kind === kind &&
+        item.language === track.language &&
+        resourceKey(item.url) === identity,
+    );
+    // Actual inspected external resources use .vtt / .ass. 'external' alone is
+    // not a file format; unknown resource formats are not guessed.
+    const suffix = /\.(vtt|ass)$/i.exec(new URL(url).pathname)?.[1]?.toLowerCase();
+    const format = previous?.format ?? suffix;
+    if (format !== 'vtt' && format !== 'ass') continue;
+    if (
+      resources.some(
+        (item) => item.kind === kind && item.language === track.language && item.url === url,
+      )
+    )
+      continue;
+    resources.push({
+      kind,
+      language: track.language,
+      format,
+      url,
+      key: previous?.key ?? `stitched:${kind}:${track.language}:${identity}`,
+      timeline: stitched.timeline,
+    });
+    if (resources.length >= (onlyEnglish ? 6 : 60)) break;
   }
   return resources;
 }
@@ -112,6 +172,15 @@ export async function loadSession(
       }
       try {
         const document = await parseCaptions(original, resource.format);
+        let timeline = resource.timeline;
+        const contentDuration =
+          timeline?.kind === 'stitched-main' ? timeline.end - timeline.start : Infinity;
+        if (
+          timeline?.kind === 'stitched-main' &&
+          (/^X-TIMESTAMP-MAP\s*=/im.test(original) ||
+            document.cues.some((cue) => cue.end > contentDuration + 0.25))
+        )
+          timeline = { kind: 'unavailable' };
         const id = await digest(
           JSON.stringify([
             episode,
@@ -129,6 +198,7 @@ export async function loadSession(
           version,
           kind: resource.kind,
           document,
+          ...(timeline ? { timeline } : {}),
         };
       } catch {
         if (resource.kind === 'captions')
@@ -199,6 +269,7 @@ export function parseSession(value: unknown): SessionEnvelope {
     if (resourceKey(track.resource) !== track.resource || url.search || url.hash)
       throw new Error('Invalid resource identity.');
     const document = record(track.document);
+    if (track.timeline !== undefined) parseCaptionTimeline(track.timeline);
     if (
       !['ass', 'vtt'].includes(String(document.format)) ||
       typeof document.original !== 'string' ||

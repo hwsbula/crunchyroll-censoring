@@ -1,4 +1,4 @@
-// Characterize the current clock-contract gaps; NOT acceptance tests for a fix.
+// Characterize remaining clock-contract gaps and the repaired source selection.
 // All captions/media below are synthetic. No network or real episode data.
 import assert from 'node:assert/strict';
 import { parseCaptions } from '../../src/core/captions.ts';
@@ -77,7 +77,7 @@ const session = {
   audioLanguage: 'en-US',
   tracks: [cc('FIRST', 'en-GB'), cc('SECOND', 'en-US')],
 };
-assert.equal(dialogueTrack(session).id, 'FIRST');
+assert.equal(dialogueTrack(session).id, 'SECOND');
 const swapped = { ...session, tracks: [...session.tracks].reverse() };
 assert.equal(dialogueTrack(swapped).id, 'SECOND');
 
@@ -89,6 +89,15 @@ const segmentUrl = 'https://example.test/segment.vtt';
 const playback = {
   captions: { 'en-US': { language: 'en-US', format: 'vtt', url: legacyUrl } },
   stitchedElements: [
+    {
+      type: 'promo',
+      start: 0,
+      end: 20,
+      track: false,
+      timeline: true,
+      textTracks: [],
+      audioTracks: [],
+    },
     {
       id: 'synthetic-main',
       type: 'main',
@@ -110,19 +119,22 @@ const playback = {
 };
 const resources = englishResources(playback);
 assert.equal(resources.length, 1);
-assert.equal(resources[0].url, legacyUrl);
-assert.notEqual(resources[0].url, playback.stitchedElements[0].textTracks[0].externalTextUrl);
-assert.deepEqual(englishResources({ stitchedElements: playback.stitchedElements }), []);
+assert.equal(resources[0].url, segmentUrl);
+assert.equal(resources[0].timeline.start, 20);
+assert.equal(englishResources({ stitchedElements: playback.stitchedElements }).length, 1);
 const changedSegmentStart = {
   ...playback,
-  stitchedElements: playback.stitchedElements.map((segment) => ({ ...segment, start: 40 })),
+  stitchedElements: playback.stitchedElements.map((segment) =>
+    segment.type === 'main' ? { ...segment, start: 40 } : { ...segment, end: 40 },
+  ),
 };
-assert.deepEqual(englishResources(changedSegmentStart), resources);
+assert.equal(englishResources(changedSegmentStart)[0].timeline.start, 40);
 
 console.log(
   JSON.stringify(
     {
-      evidence: 'Synthetic characterization of 0.1.9; does not establish the live episode cause.',
+      evidence:
+        'Synthetic checks of 0.1.10; remaining distinct-clock / WebVTT-map gaps are not supported stitched layouts.',
       parsedPlainStarts: starts(plain),
       parsedMappedStarts: starts(mapped),
       timestampMapIgnored: true,
@@ -147,8 +159,9 @@ console.log(
         mainSegmentResourceSelected: resources.some((resource) => resource.url === segmentUrl),
         segmentOnlyResourceCount: englishResources({ stitchedElements: playback.stitchedElements })
           .length,
-        changedSegmentStartAffectsSelection: false,
-        note: 'Synthetic schema only; segment.start is not asserted to be a caption offset.',
+        changedSegmentStartAffectsMapping: true,
+        automaticOffset: resources[0].timeline.start,
+        note: 'Supported contiguous timeline-included promo plus MAIN; actual regression coverage is in stitched.test.ts.',
       },
     },
     null,

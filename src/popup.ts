@@ -137,7 +137,7 @@ function renderPlayer(): void {
   element<HTMLButtonElement>('#timing-apply').disabled = !correction?.track;
   element('#timing-status').textContent = !correction?.track
     ? 'Matching English-dub CC required.'
-    : `Current correction: ${correction.offset > 0 ? '+' : ''}${correction.offset} seconds. This episode and tab only.`;
+    : `Playback metadata: +${correction.automaticOffset ?? 0} seconds. Additional manual correction: ${correction.offset > 0 ? '+' : ''}${correction.offset} seconds. This episode and tab only.`;
   element('#episode').textContent = snapshot?.episode
     ? `Episode ${snapshot.episode} · version ${snapshot.version}`
     : 'No connected Crunchyroll episode';

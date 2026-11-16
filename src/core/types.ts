@@ -42,7 +42,11 @@ export interface Track {
   language: string;
   kind: 'captions' | 'subtitles';
   document: CaptionDocument;
+  // Source cues stay episode-relative. Never rewrite their text, times or IDs.
+  timeline?: CaptionTimeline;
 }
+export type CaptionTimeline =
+  { kind: 'stitched-main'; start: number; end: number; duration: number } | { kind: 'unavailable' };
 export interface Session {
   episode: string;
   version: string;
@@ -88,5 +92,5 @@ export interface PlayerSnapshot {
   occurrences: Occurrence[];
   total: number;
   trackSummary: string;
-  audioTiming?: { track: string | null; offset: number };
+  audioTiming?: { track: string | null; offset: number; automaticOffset?: number };
 }

@@ -66,11 +66,12 @@
       <details class="track-details" id="timing-controls">
         <summary>Timing correction (this episode)</summary>
         <p class="help">
-          Applies to matching English-dub CC in this tab. Positive seconds censor later; negative
-          seconds censor earlier. Verify against two spoken lines. Resets on episode changes or
-          reload.
+          Playback metadata automatically accounts for supported opening promos. Leave the
+          additional correction at 0 normally. Positive seconds censor later; negative seconds
+          censor earlier. Verify any manual change against two spoken lines. Resets on episode
+          changes or reload.
         </p>
-        <label for="timing-offset">Shift CC audio and timestamps (seconds)</label>
+        <label for="timing-offset">Additional CC correction (seconds)</label>
         <input
           id="timing-offset"
           type="number"

@@ -98,6 +98,44 @@ async function launch(profile?: string) {
       };
       return route.fulfill({
         json: {
+          ...(url.searchParams.has('stitched-prefix')
+            ? {
+                stitchedElements: [
+                  {
+                    type: url.searchParams.has('stitched-ad') ? 'ad' : 'promo',
+                    start: 0,
+                    end: Number(url.searchParams.get('stitched-prefix')),
+                    track: false,
+                    timeline: true,
+                    textTracks: [],
+                    audioTracks: [],
+                  },
+                  {
+                    type: 'main',
+                    start: Number(url.searchParams.get('stitched-prefix')),
+                    end: Number(url.searchParams.get('stitched-prefix')) + 12,
+                    track: true,
+                    timeline: true,
+                    audioTracks: [],
+                    textTracks: [
+                      { role: 'subtitle', format: 'burned_in', language: 'en-US' },
+                      {
+                        role: mode === 'japanese' ? 'subtitle' : 'closed_caption',
+                        format: 'external',
+                        language: 'en-US',
+                        externalTextUrl: track.url,
+                      },
+                      {
+                        role: 'subtitle',
+                        format: 'external',
+                        language: 'es-ES',
+                        externalTextUrl: 'https://www.crunchyroll.com/spanish.vtt',
+                      },
+                    ],
+                  },
+                ],
+              }
+            : {}),
           captions: mode === 'missing' || mode === 'japanese' ? {} : { 'en-US': track },
           subtitles: {
             ...(mode === 'missing' || mode === 'japanese' ? { 'en-US': track } : {}),
@@ -786,6 +824,130 @@ test('manual episode timing correction shifts audio ahead of display and seeks, 
     await page.locator('#japanese').click();
     await expect(page.locator('#fixture-state')).toHaveText('Ready: japanese');
     await expect(popup.locator('#timing-apply')).toBeDisabled();
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('stitched promo metadata aligns native muting, text, popup seeks and autoplay without a manual correction', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?stitched');
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-reason')).toContainText('metadata adds 19.061');
+    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await media(page, 20);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('.timestamp').first()).toHaveText('0:19');
+    await popup.locator('.timestamp').first().click();
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime))
+      .toBeCloseTo(19.781, 2);
+    await media(page, 20, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await media(page, 20);
+    await popup.locator('.ignore').nth(0).click();
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That damn class is full of ****!',
+    );
+    await media(page, 20, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await media(page, 20);
+    await popup.locator('.ignore').nth(1).click();
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That damn class is full of shit!',
+    );
+    await media(page, 20, true);
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await media(page, 20);
+    await popup.locator('.ignore').nth(0).click();
+    await popup.locator('.ignore').nth(1).click();
+    await page.locator('#fullscreen').click();
+    await expect
+      .poll(() => page.evaluate(() => document.fullscreenElement?.id))
+      .toBe('player-container');
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await page.evaluate(() => document.exitFullscreen());
+    await popup.setViewportSize({ width: 410, height: 600 });
+    await popup.locator('#timing-controls summary').click();
+    await expect(popup.locator('#timing-offset')).toHaveValue('0');
+    await expect(popup.locator('#timing-status')).toContainText('metadata: +19.061');
+    await popup.locator('#timing-controls').scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: '/tmp/crunchyroll-0110-timing.png' });
+    await page.getByRole('button', { name: 'Audio and subtitle language options' }).click();
+    await page
+      .getByRole('menu', { name: 'Subtitle and closed caption selection' })
+      .getByRole('menuitemradio', { name: 'None', exact: true })
+      .click();
+    await media(page, 20, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toBeEmpty();
+    await media(page, 20);
+    await popup.close();
+    await page.locator('#autoplay').check();
+    await media(page, 31, true);
+    await expect(page.locator('#sequence')).toHaveText('1');
+    await media(page, 8.2);
+    const nextPopup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(nextPopup.locator('#audio-reason')).toContainText('metadata adds 7.25');
+    await expect(nextPopup.locator('.timestamp').first()).toHaveText('0:08');
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await media(page, 8.2, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await media(page, 8.2);
+    await page.locator('#next-audio').selectOption('japanese');
+    await media(page, 19.2, true);
+    await expect(page.locator('#sequence')).toHaveText('2');
+    await media(page, 8.2, true);
+    await expect(nextPopup.locator('#audio-phase')).toHaveText('disabled');
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await media(page, 8.2);
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('unsupported stitched layouts disclose unavailable audio and seeks while exact English text remains filtered', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?stitched&stitched-ad');
+    await media(page, 20);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-reason')).toContainText('stitched playback layout');
+    await expect(popup.locator('.timestamp').first()).toBeDisabled();
+    await expect(page.locator('#quietroll-coverage')).toContainText('Audio filtering unavailable');
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await media(page, 20, true);
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await media(page, 20);
+    await popup.locator('#enabled').uncheck();
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That damn class is full of shit!',
+    );
     expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();

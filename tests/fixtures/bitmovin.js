@@ -5,7 +5,7 @@ const controls = document.querySelector('[data-testid="player-controls-root"]');
 const toggle = controls.querySelector('button');
 const parameters = new URL(location.href).searchParams;
 // Exercise independent renderer timing without changing the source cue times.
-const captionDelay = Number(parameters.get('caption-delay') || 0);
+let captionDelay = Number(parameters.get('caption-delay') || 0);
 let layer = document.querySelector('ul');
 let mode = 'english',
   selected = 'English [CC]',
@@ -135,6 +135,7 @@ function menu() {
     }, 250);
 }
 async function begin(next, continuing = false) {
+  if (parameters.has('stitched')) captionDelay = sequence ? 7.25 : 19.061;
   mode = next;
   document.querySelector('#fixture-state').textContent = 'Loading';
   selected =
@@ -156,7 +157,10 @@ async function begin(next, continuing = false) {
   nodes.clear();
   const version = (next === 'japanese' ? 'TESTJA' : 'TESTEN') + (sequence || '');
   await fetch(`/content/v2/cms/objects/${version}?fixture=${next}`);
-  await fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}`);
+  const stitched = parameters.has('stitched')
+    ? `&stitched-prefix=${captionDelay}${parameters.has('stitched-ad') ? '&stitched-ad' : ''}`
+    : '';
+  await fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}${stitched}`);
   video.src = audio();
   await new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
   if (!continuing) video.volume = 0.4;

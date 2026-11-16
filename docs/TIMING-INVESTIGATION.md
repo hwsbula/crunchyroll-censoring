@@ -1,6 +1,18 @@
 # Caption timing investigation — November 16, 2026
 
-**Status: the live response confirms a 19.061-second promo before the main episode; the extension ignores this segment context.** This closely matches the reported roughly 20-second discrepancy. Confirming the actual CC resource and its time origin is still required before automatically applying an offset. This investigation does not change the shipped runtime, claim a verified playback fix, or publish a release.
+**Status: the metadata investigation identified a 19.061-second opening promo omitted by the old extension's source-to-playback conversion. Version 0.1.10 implements a guarded mapping for this supported layout; corrected live audio remains unverified.**
+
+## Final supplied evidence and implementation
+
+The user confirmed MAIN's English track is `role: closed_caption`, `format: external`, `language: en-US`, with an `externalTextUrl` **identical** to the legacy top-level en-US caption URL. Thus different CC resources are ruled out for this session. The en-US ASS subtitle and burned-in subtitle entries are separate roles/rendering choices, not alternate English-dub CC timing sources. Signed URLs and account/session identifiers from the supplied response were not copied into code, fixtures, logs or this report, and were not requested or fetched.
+
+Together with the actual 19.061-second timeline-included promo, matching native/UI clocks at 10:00 and headerless VTT, the evidence supports the missing MAIN-to-playback translation as the cause of the approximately 20-second discrepancy. It is not a universal 20-second offset. The whole cue can begin before the particular profane word, and UI timestamps discard fractional seconds. Exact corrected acoustic onsets still require live playback verification.
+
+The implementation selects MAIN external text resources and retains source cues separately from the mapping. It accepts only contiguous timeline-included promo/logo prefixes followed by one MAIN; checks finite native duration against the described timeline; adds MAIN.start to scheduled intervals, shown timestamps and seeks; clamps padding to MAIN; and resets on episode changes. Unsupported layouts, timestamp-mapped VTT and out-of-range cues cannot be manually forced into audio filtering. Original subtitle rendering, per-occurrence IDs and Japanese-audio protections remain. Manual correction is now an additional adjustment, normally zero. No API permissions, backend, cloud transcription, DRM access or durable viewing data were added.
+
+Focused synthetic unit/browser regressions cover the repaired contract. The remaining generic WebVTT timestamp-map and distinct SDK/media-clock cases below are outside this supported automatic layout. `scripts/diagnostics/reproduce-timing.mjs` now asserts repaired MAIN-resource selection and locale disambiguation while retaining those unresolved generic reproductions. See RELEASE.md and PRODUCT.md for the final gate results.
+
+The following sections preserve the investigation sequence and 0.1.9 findings; references to pending metadata describe the evidence available at that earlier stage.
 
 ## Evidence and the important correction to earlier advice
 

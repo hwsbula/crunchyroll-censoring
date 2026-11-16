@@ -1,6 +1,6 @@
 {
   "name": "crunchyroll-censoring",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Local, caption-timed English profanity filtering for supported Crunchyroll players.",
   "private": true,
   "type": "module",
