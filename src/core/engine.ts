@@ -480,7 +480,7 @@ export class FilterEngine {
     } else if (this.timingProblems.has(dialogueTrack(this.session)!.id)) {
       this.audio = status(
         'unavailable',
-        'Audio filtering unavailable: English CC cue timing disagrees with playback. Subtitle filtering can continue; timestamp links for this track are disabled. Use Timing correction (this episode) in the popup only after checking a constant offset at two spoken lines.',
+        'Audio filtering unavailable: English CC cue timing disagrees with playback. Subtitle filtering can continue; timestamp links for this track are disabled. Enable Settings → Developer tools to inspect timing. Only apply a manual correction after verifying a constant offset at two spoken lines.',
       );
     } else if (!this.timelineReady) {
       this.audio = status(
@@ -521,8 +521,7 @@ export class FilterEngine {
     )
       this.subtitles = status(
         'active',
-        this.renderer.description ??
-          `English subtitles filtered before rendering (${selected.language}).`,
+        this.renderer.description ?? 'Matched words in English subtitles are replaced with ****.',
       );
     else
       this.subtitles = status(

@@ -267,6 +267,8 @@ test('unpacked popup has truthful empty states; settings persist through popup a
     await options.locator('#save').click();
     await expect(options.locator('#status')).toContainText('Settings saved');
     await expect(options.locator('#custom')).toHaveValue('space wizard\nliteral.*term');
+    await options.locator('#developer-tools').check();
+    await expect(options.locator('#before')).toBeVisible();
     await options.locator('#before').focus();
     await options.keyboard.press('Tab');
     await expect(options.locator('#after')).toBeFocused();
@@ -283,6 +285,105 @@ test('unpacked popup has truthful empty states; settings persist through popup a
     await reopened.goto(`chrome-extension://${extension.id}/options.html`);
     await expect(reopened.locator('#custom')).toHaveValue('space wizard\nliteral.*term');
     await expect(reopened.getByLabel('hell', { exact: true })).not.toBeChecked();
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('public interface hides developer tools by default, preserves coverage and saves the display preference locally', async () => {
+  let extension = await launch();
+  const directory = extension.directory;
+  try {
+    const page = await startOverlay(extension.context, 'english', '?stitched');
+    await media(page, 20);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await popup.setViewportSize({ width: 410, height: 600 });
+    await expect(popup).toHaveTitle('CrunchyRoll Censoring');
+    expect(popup.url()).toBe(`chrome-extension://${extension.id}/popup.html`);
+    await expect(popup.locator('#connection')).toHaveText('Connected to the current episode');
+    await expect(popup.locator('#audio-phase')).toHaveText('Active');
+    await expect(popup.locator('#subtitle-phase')).toHaveText('Active');
+    await expect(popup.locator('#audio-language')).toContainText('English');
+    await expect(popup.locator('#episode')).toBeHidden();
+    await expect(popup.locator('#timing-controls')).toBeHidden();
+    await expect(popup.locator('#audio-reason')).not.toContainText('19.061');
+    await expect(popup.locator('.occurrences li')).not.toHaveCount(0);
+    expect(await popup.evaluate(() => document.body.innerText)).not.toContain(
+      'integration preview',
+    );
+    expect(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await popup.screenshot({ path: '/tmp/crunchyroll-public-popup.png' });
+
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(options).toHaveTitle('CrunchyRoll Censoring — Settings');
+    await expect(options.locator('#developer-tools')).not.toBeChecked();
+    await expect(options.locator('#before')).toBeHidden();
+    const before = await extension.worker.evaluate(
+      async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+    );
+    await options.locator('a[href="#developer"]').click();
+    await options.locator('#developer-tools').focus();
+    await options.keyboard.press('Space');
+    await expect(options.locator('#developer-status')).toContainText('visible');
+    await expect(options.locator('#before')).toBeVisible();
+    const after = await extension.worker.evaluate(
+      async () => (await chrome.storage.local.get('quietroll.v1'))['quietroll.v1'],
+    );
+    expect(after).toEqual(before);
+    const syncedKeys = await extension.worker.evaluate(async () =>
+      Object.keys(await chrome.storage.sync.get(null)),
+    );
+    expect(syncedKeys).not.toContain('crunchyroll.developer-tools.v1');
+    await activeTab(extension.worker, page);
+    await expect(popup.locator('#timing-controls')).toBeVisible();
+    await popup.locator('#timing-controls summary').click();
+    await popup.locator('#timing-offset').fill('0.2');
+    await popup.locator('#timing-apply').click();
+    await expect(popup.locator('#manual-notice')).toBeVisible();
+    await popup.locator('#timing-controls').scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: '/tmp/crunchyroll-developer-popup.png' });
+    await options.locator('#developer-tools').uncheck();
+    await activeTab(extension.worker, page);
+    await expect(popup.locator('#timing-controls')).toBeHidden();
+    await expect(popup.locator('#manual-notice')).toBeVisible();
+    await popup.locator('#timing-reset').click();
+    await expect(popup.locator('#manual-notice')).toBeHidden();
+    expect((await readPlayer(popup)).snapshot.audioTiming?.automaticOffset).toBe(19.061);
+    expect((await readPlayer(popup)).snapshot.audioTiming?.offset).toBe(0);
+
+    const missing = await start(extension.context, 'English audio without CC');
+    await activeTab(extension.worker, missing);
+    await expect(popup.locator('#audio-phase')).toHaveText('Unavailable');
+    await expect(popup.locator('#audio-reason')).toBeVisible();
+    await expect(popup.locator('#audio-reason')).toContainText('Audio filtering unavailable');
+    await expect(missing.locator('#quietroll-coverage')).toContainText(
+      'Audio filtering unavailable',
+    );
+    await expect(popup.locator('#timing-controls')).toBeHidden();
+    await options.locator('#developer-tools').check();
+    await expect(options.locator('#developer-status')).toContainText('visible');
+    expect(extension.errors).toEqual([]);
+    await extension.cleanup(false);
+
+    extension = await launch(directory);
+    const restored = await extension.context.newPage();
+    await restored.goto(`chrome-extension://${extension.id}/options.html`);
+    await expect(restored.locator('#developer-tools')).toBeChecked();
+    await expect(restored.locator('#before')).toHaveValue('80');
+    await restored.locator('#developer-tools').uncheck();
+    await expect(restored.locator('#before')).toBeHidden();
+    await restored.setViewportSize({ width: 1280, height: 800 });
+    await restored.evaluate(() => scrollTo(0, 0));
+    await restored.screenshot({ path: '/tmp/crunchyroll-public-settings.png' });
+    await restored.setViewportSize({ width: 390, height: 844 });
+    expect(await restored.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await restored.screenshot({ path: '/tmp/crunchyroll-public-settings-narrow.png' });
+    expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();
   }
@@ -382,7 +483,7 @@ test('expanded dialogue filters English audio and captions, preserves Japanese a
     );
     const page = await start(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await media(page, 1, true);
     await expect(page.locator('#fixture-caption')).toHaveText(
       'You **** ****! Stop staring at her ****.',
@@ -526,7 +627,7 @@ test('native Chrome Sync changes wait for complete chunks, update active filteri
   try {
     const page = await start(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await media(page, 1);
     const options = await extension.context.newPage();
     await options.goto(`chrome-extension://${extension.id}/options.html`);
@@ -548,11 +649,11 @@ test('native Chrome Sync changes wait for complete chunks, update active filteri
       { [SYNC_HEAD]: bundle.head },
     );
     await expect(options.locator('#sync-status')).toContainText('Waiting for the complete');
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await extension.worker.evaluate(async (chunks) => {
       await chrome.storage.sync.set(chunks);
     }, bundle.items);
-    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
     await expect(page.locator('#fixture-caption')).toHaveText('That damn class is full of shit!');
     await options.locator('#custom').fill('stale draft');
     await options.locator('#save').click();
@@ -607,10 +708,10 @@ test('Web Store screenshots show actual settings and legacy sync conflicts requi
     await options.goto(`chrome-extension://${extension.id}/options.html`);
     await expect(options.locator('#save')).toBeEnabled();
     await options.setViewportSize({ width: 1280, height: 800 });
-    await expect(options).toHaveTitle('CrunchyRoll Censoring — Term settings');
+    await expect(options).toHaveTitle('CrunchyRoll Censoring — Settings');
     await expect(options.locator('#sync-status')).not.toContainText('Checking');
     await options.screenshot({
-      path: '/tmp/crunchyroll-store-sync.jpg',
+      path: '/tmp/crunchyroll-store-settings.jpg',
       type: 'jpeg',
       quality: 95,
     });
@@ -664,15 +765,15 @@ test('Bitmovin overlay: verified English CC, no painted flashes, Ignore/Unignore
     const page = await startOverlay(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
     const captions = page.locator('.bitmovinplayer-container ul');
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(page.locator('#menu-reads')).toHaveText('1');
     await expect(page.locator('#manual-menus')).toHaveText('0');
     await expect(page.locator('[data-testid="track-selection-button"]')).toHaveAttribute(
       'aria-expanded',
       'false',
     );
-    await expect(popup.locator('#subtitle-language')).toHaveText('en-US');
+    await expect(popup.locator('#subtitle-language')).toHaveText('American English');
     await expect(captions).toHaveText('That **** class is full of ****!');
     await expect(captions.locator('b')).toHaveCount(1);
     await expect(captions.locator('i')).toHaveCount(1);
@@ -708,7 +809,7 @@ test('Bitmovin overlay: verified English CC, no painted flashes, Ignore/Unignore
     await expect(captions).toHaveText('That **** class is full of shit!');
     await popup.locator('#enabled').uncheck();
     await expect(captions).toHaveText('That damn class is full of shit!');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     await popup.locator('#enabled').check();
     await expect(captions).toHaveText('That **** class is full of shit!');
     expect(extension.errors).toEqual([]);
@@ -727,24 +828,24 @@ test('timing mismatch blocks unsafe audio and timestamp navigation while English
       'That **** class is full of ****!',
     );
     await media(page, 21, true);
-    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
     await media(page, 21);
     await expect(popup.locator('#audio-reason')).toContainText('timing disagrees');
     await expect(page.locator('#quietroll-coverage')).toContainText('Audio filtering unavailable');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(popup.locator('.timestamp').first()).toBeDisabled();
     const row = (await readPlayer(popup)).snapshot.occurrences[0]!;
     expect(row.textCensored).toBe(true);
     expect(row.audioCensored).toBe(false);
     await popup.locator('#retry').click();
-    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
     await popup.locator('.ignore').first().click();
     await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
       'That damn class is full of ****!',
     );
     await popup.locator('#enabled').uncheck();
     await popup.locator('#enabled').check();
-    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
     expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();
@@ -754,6 +855,11 @@ test('timing mismatch blocks unsafe audio and timestamp navigation while English
 test('manual episode timing correction shifts audio ahead of display and seeks, survives popup closure, and resets per episode', async () => {
   const extension = await launch();
   try {
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await options.locator('#developer-tools').check();
+    await expect(options.locator('#developer-status')).toContainText('visible');
+    await options.close();
     const page = await startOverlay(extension.context, 'english', '?caption-delay=20');
     await media(page, 21);
     let popup = await openPopup(extension.context, extension.worker, extension.id, page);
@@ -764,7 +870,7 @@ test('manual episode timing correction shifts audio ahead of display and seeks, 
     await expect(popup.locator('#timing-apply')).toBeFocused();
     await popup.keyboard.press('Enter');
     await expect(popup.locator('#timing-status')).toContainText('+20 seconds');
-    await expect(popup.locator('#audio-reason')).toContainText('manual +20');
+    await expect(popup.locator('#audio-diagnostic')).toContainText('manual +20');
     await expect(popup.locator('.timestamp').first()).toHaveText('0:20');
     await popup.locator('.timestamp').first().click();
     await expect
@@ -833,16 +939,21 @@ test('manual episode timing correction shifts audio ahead of display and seeks, 
 test('stitched promo metadata aligns native muting, text, popup seeks and autoplay without a manual correction', async () => {
   const extension = await launch();
   try {
+    const options = await extension.context.newPage();
+    await options.goto(`chrome-extension://${extension.id}/options.html`);
+    await options.locator('#developer-tools').check();
+    await expect(options.locator('#developer-status')).toContainText('visible');
+    await options.close();
     const page = await startOverlay(extension.context, 'english', '?stitched');
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-reason')).toContainText('metadata adds 19.061');
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-diagnostic')).toContainText('metadata adds 19.061');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
     await media(page, 20);
     await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
       'That **** class is full of ****!',
     );
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(popup.locator('.timestamp').first()).toHaveText('0:19');
     await popup.locator('.timestamp').first().click();
     await expect
@@ -902,7 +1013,7 @@ test('stitched promo metadata aligns native muting, text, popup seeks and autopl
     await expect(page.locator('#sequence')).toHaveText('1');
     await media(page, 8.2);
     const nextPopup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(nextPopup.locator('#audio-reason')).toContainText('metadata adds 7.25');
+    await expect(nextPopup.locator('#audio-diagnostic')).toContainText('metadata adds 7.25');
     await expect(nextPopup.locator('.timestamp').first()).toHaveText('0:08');
     await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
       'That **** class is full of ****!',
@@ -916,7 +1027,7 @@ test('stitched promo metadata aligns native muting, text, popup seeks and autopl
     await media(page, 19.2, true);
     await expect(page.locator('#sequence')).toHaveText('2');
     await media(page, 8.2, true);
-    await expect(nextPopup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(nextPopup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
     await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
       'That **** class is full of ****!',
@@ -934,7 +1045,7 @@ test('unsupported stitched layouts disclose unavailable audio and seeks while ex
     const page = await startOverlay(extension.context, 'english', '?stitched&stitched-ad');
     await media(page, 20);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#audio-reason')).toContainText('stitched playback layout');
     await expect(popup.locator('.timestamp').first()).toBeDisabled();
     await expect(page.locator('#quietroll-coverage')).toContainText('Audio filtering unavailable');
@@ -962,7 +1073,7 @@ test('Bitmovin overlay: exact displayed cue identity survives renderer timing di
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
     const captions = page.locator('.bitmovinplayer-container ul');
     await expect(captions).toHaveText('That **** class is full of ****!');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(popup.locator('#subtitle-reason')).toContainText('timing differs');
     const samples = await page.evaluate(async () => {
       const values: string[] = [];
@@ -993,14 +1104,14 @@ test('Bitmovin overlay: exact displayed cue identity survives renderer timing di
     await expect(page.locator('#fixture-state')).toHaveText('Ready: japanese');
     await media(page, 3.5);
     await expect(captions).toHaveText('That **** class is full of ****!');
-    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
     await page.getByRole('button', { name: 'Audio and subtitle language options' }).click();
     await page
       .getByRole('menu', { name: 'Subtitle and closed caption selection' })
       .getByRole('menuitemradio', { name: 'Spanish', exact: true })
       .click();
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     await expect(captions).toHaveText('That damn class is full of shit!');
     expect(extension.errors).toEqual([]);
   } finally {
@@ -1027,11 +1138,11 @@ test('Bitmovin overlay: timing drift never borrows a repeated cue exception, inc
     // At media time 5 the renderer displays source time 2.5, not source time 5.
     // Identical text cannot establish which of those occurrence IDs is showing.
     await media(page, 5);
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#subtitle-reason')).toContainText('multiple cue identities');
     await expect(captions).toHaveText('What the hell?\nWatch your step.');
     await page.locator('#replace-layer').click();
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     const rows = (await readPlayer(popup)).snapshot.occurrences;
     expect(rows.slice(2).every((row) => !row.textCensored)).toBe(true);
     expect(rows[2]!.ignored).toBe(false);
@@ -1052,8 +1163,9 @@ test('Bitmovin overlay: Japanese audio, keyboard track selection, non-English or
     await toggle.focus();
     await page.keyboard.press('Enter');
     await expect(captions).toHaveText('That **** class is full of ****!');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
-    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
+    await popup.locator('#mode-controls summary').click();
     await popup.locator('#mode').selectOption('english');
     await media(page, 1, true);
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
@@ -1061,13 +1173,13 @@ test('Bitmovin overlay: Japanese audio, keyboard track selection, non-English or
     const tracks = page.getByRole('menu', { name: 'Subtitle and closed caption selection' });
     await tracks.getByRole('menuitemradio', { name: 'Spanish', exact: true }).focus();
     await page.keyboard.press('Enter');
-    await expect(popup.locator('#subtitle-language')).toHaveText('es-ES');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-language')).toHaveText('European Spanish');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     // This fixture's Spanish metadata intentionally accompanies identical text.
     await expect(captions).toHaveText('That damn class is full of shit!');
     await tracks.getByRole('menuitemradio', { name: 'None', exact: true }).click();
     await expect(captions).toBeEmpty();
-    await expect(popup.locator('#subtitle-language')).toHaveText('off');
+    await expect(popup.locator('#subtitle-language')).toHaveText('Off');
     await tracks.getByRole('menuitemradio', { name: 'English', exact: true }).click();
     await expect(captions).toHaveText('That **** class is full of ****!');
     await toggle.click();
@@ -1097,13 +1209,13 @@ test('Bitmovin overlay: prefetched tracks never select a language; mismatches an
     await expect(captions).toHaveText('That **** class is full of ****!');
     await page.locator('#prefetch').click();
     await expect(page.locator('#menu-reads')).toHaveText('2');
-    await expect(popup.locator('#subtitle-language')).toHaveText('en-US');
+    await expect(popup.locator('#subtitle-language')).toHaveText('American English');
     await expect(captions).toHaveText('That **** class is full of ****!');
     await page.locator('#mismatch').click();
     await expect(captions).toHaveText('Unassociated damn caption!');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#subtitle-reason')).toContainText('do not match');
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     const options = await extension.context.newPage();
     await options.goto(`chrome-extension://${extension.id}/options.html`);
     await options.locator('#custom').fill('class');
@@ -1113,7 +1225,7 @@ test('Bitmovin overlay: prefetched tracks never select a language; mismatches an
     await expect(captions).toHaveText('Unassociated damn caption!');
     await page.locator('#mismatch').click();
     await expect(captions).toHaveText('That **** **** is full of ****!');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(popup.locator('#occurrences li')).toHaveCount(4);
     await media(page, 2.4);
     await expect(captions).toHaveText('What the ****?\nWatch your step.');
@@ -1125,7 +1237,7 @@ test('Bitmovin overlay: prefetched tracks never select a language; mismatches an
     await captions.evaluate((node) => {
       (node as HTMLElement).style.position = 'relative';
     });
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(captions).toHaveText('What the hell?\nWatch your step.');
     expect(extension.errors).toEqual([]);
   } finally {
@@ -1139,8 +1251,8 @@ test('Bitmovin overlay: empty/hardcoded coverage stays unavailable and an audio/
     const page = await startOverlay(extension.context, 'english', '?empty');
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
     const captions = page.locator('.bitmovinplayer-container ul');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('loading');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'loading');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#subtitle-reason')).toContainText('not exposed');
     await expect(page.locator('#quietroll-coverage')).toContainText('not exposed');
     await expect(captions).toBeEmpty();
@@ -1159,9 +1271,9 @@ test('Bitmovin overlay: empty/hardcoded coverage stays unavailable and an audio/
       .click();
     await expect(page.locator('#fixture-state')).toHaveText('Ready: japanese');
     await media(page, 1);
-    await expect(popup.locator('#audio-language')).toHaveText('ja-JP');
-    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-language')).toHaveText('Japanese (Japan)');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(captions).toHaveText('That **** class is full of ****!');
     const after = (await readPlayer(popup)).snapshot.occurrences[0]!;
     expect(after.id).not.toBe(before);
@@ -1193,8 +1305,8 @@ test('autoplay rechecks each episode without user menus, preserves playback, and
       v.currentTime = 11.85;
     });
     await expect(page.locator('#sequence')).toHaveText('1');
-    await expect(popup.locator('#audio-language')).toHaveText('ja-JP');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-language')).toHaveText('Japanese (Japan)');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(captions).toContainText('****');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => ({
@@ -1212,16 +1324,16 @@ test('autoplay rechecks each episode without user menus, preserves playback, and
       v.currentTime = 11.85;
     });
     await expect(page.locator('#sequence')).toHaveText('2');
-    await expect(popup.locator('#audio-language')).toHaveText('en-US');
-    await expect(popup.locator('#subtitle-language')).toHaveText('es-ES');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#audio-language')).toHaveText('American English');
+    await expect(popup.locator('#subtitle-language')).toHaveText('European Spanish');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     await expect(captions).toHaveText('That damn class is full of shit!');
     await page.locator('#next-subtitle').selectOption('english');
     await page.locator('video').evaluate((v: HTMLVideoElement) => {
       v.currentTime = 11.85;
     });
     await expect(page.locator('#sequence')).toHaveText('3');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(captions).toContainText('****');
     await expect(page.locator('#manual-menus')).toHaveText('0');
     await expect(page.locator('#menu-reads')).toHaveText('4');
@@ -1235,8 +1347,8 @@ test('autoplay rechecks each episode without user menus, preserves playback, and
     await expect
       .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime))
       .toBeGreaterThan(1.3);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     const finalOccurrence = (await readPlayer(popup)).snapshot.occurrences[0]!;
     expect(finalOccurrence.id).not.toBe(initial);
     expect(finalOccurrence.ignored).toBe(false);
@@ -1252,7 +1364,7 @@ test('short empty caption redraws do not flash warnings or uncensored text', asy
   try {
     const page = await startOverlay(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(page.locator('#quietroll-coverage')).toBeHidden();
     await page.locator('#transients').click();
     const frames = await page.evaluate(async () => {
@@ -1275,7 +1387,7 @@ test('short empty caption redraws do not flash warnings or uncensored text', asy
       frames.every((frame) => !frame.warning && !frame.menu && !/damn|shit/.test(frame.text)),
     ).toBe(true);
     await page.locator('#transients').click();
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
       'That **** class is full of ****!',
     );
@@ -1312,7 +1424,7 @@ test('automatic menu read is bounded, restores native visibility, and leaves a u
     expect(observedProbe.visible).toBe(0);
     await expect(page.locator('#english')).toBeFocused();
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#subtitle-reason')).toContainText(
       'could not be verified automatically',
     );
@@ -1324,7 +1436,7 @@ test('automatic menu read is bounded, restores native visibility, and leaves a u
     await expect(page.locator('#quietroll-coverage')).toBeHidden();
     await popup.locator('#enabled').check();
     await expect(page.locator('#menu-reads')).toHaveText('2');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await toggle.click();
     await expect(page.locator('[data-testid="audio-text-track-menu"]')).toBeVisible();
@@ -1357,8 +1469,8 @@ test('English CC: pre-render text, real media muting, Ignore/Unignore, seek and 
   try {
     const page = await start(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(popup.locator('#occurrences li')).toHaveCount(3);
     await expect(popup.locator('#occurrences')).not.toContainText(/damn|shit|hell/);
     await expect(popup.locator('.playback-state').first()).toContainText('Upcoming');
@@ -1402,8 +1514,8 @@ test('disable/restore, reveal, keyboard controls and occurrence exceptions persi
   try {
     const page = await start(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await popup.locator('.ignore').nth(1).click();
     await expect(popup.locator('.ignore').nth(1)).toHaveText('Unignore');
     await media(page, 1, true);
@@ -1411,7 +1523,7 @@ test('disable/restore, reveal, keyboard controls and occurrence exceptions persi
     await media(page, 1);
     await popup.locator('#enabled').uncheck();
     await expect(page.locator('#fixture-caption')).toHaveText('That damn class is full of shit!');
-    await expect(popup.locator('#audio-phase')).toHaveText('disabled');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'disabled');
     await popup.locator('#enabled').check();
     await expect(page.locator('#fixture-caption')).toHaveText('That **** class is full of shit!');
     await popup.locator('#reveal').check();
@@ -1419,14 +1531,14 @@ test('disable/restore, reveal, keyboard controls and occurrence exceptions persi
     await popup.locator('#reveal').uncheck();
     await expect(popup.locator('#occurrences')).not.toContainText(/damn|shit|hell/);
     await page.locator('#off').click();
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     await page.locator('#restore-subtitles').click();
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(page.locator('#fixture-caption')).toHaveText('That **** class is full of shit!');
     await popup.locator('#retry').focus();
     await popup.keyboard.press('Tab');
     await expect(popup.locator('#settings')).toBeFocused();
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await popup.setViewportSize({ width: 410, height: 600 });
     await popup.screenshot({ path: '/tmp/quietroll-popup.png', fullPage: true });
     await popup.reload();
@@ -1443,12 +1555,13 @@ test('Japanese audio stays audible with English censorship; non-English captions
   try {
     const page = await start(extension.context, 'japanese');
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-language')).toHaveText('ja-JP');
+    await expect(popup.locator('#audio-language')).toHaveText('Japanese (Japan)');
     await expect(popup.locator('#audio-reason')).toContainText('Japanese audio is unchanged');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await media(page, 1, true);
     await expect(page.locator('#fixture-caption')).toHaveText('That **** class is full of ****!');
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await popup.locator('#mode-controls summary').click();
     await popup.locator('#mode').selectOption('english');
     await expect(popup.locator('#selected-mode')).toContainText('Japanese audio (detected)');
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
@@ -1456,8 +1569,8 @@ test('Japanese audio stays audible with English censorship; non-English captions
     await expect(page.locator('#fixture-state')).toContainText('Ready: spanish');
     await media(page, 1);
     await expect(page.locator('#fixture-caption')).toHaveText('Un damn de prueba en español.');
-    await expect(popup.locator('#subtitle-language')).toHaveText('es-ES');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('disabled');
+    await expect(popup.locator('#subtitle-language')).toHaveText('European Spanish');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'disabled');
     expect(extension.errors).toEqual([]);
   } finally {
     await extension.cleanup();
@@ -1470,7 +1583,7 @@ test('missing CC, unknown audio, off/unsupported subtitles, fullscreen and ads r
     const page = await start(extension.context, 'English audio without CC');
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
     await expect(popup.locator('#audio-reason')).toContainText('no English dialogue/CC');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     await expect(page.locator('#quietroll-coverage')).toContainText('Audio filtering unavailable');
     await page.locator('#fullscreen').click();
     await expect
@@ -1485,20 +1598,20 @@ test('missing CC, unknown audio, off/unsupported subtitles, fullscreen and ads r
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
     await page.getByRole('button', { name: 'Subtitles initially off', exact: true }).click();
     await expect(page.locator('#fixture-state')).toContainText('Ready: off');
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await media(page, 1, true);
     await expect
       .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
       .toBe(true);
     await page.getByRole('button', { name: 'Unsupported renderer', exact: true }).click();
     await expect(page.locator('#fixture-state')).toContainText('Ready: unsupported');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(page.locator('#fixture-caption')).toContainText('Uncensored fixture text: damn');
     await expect(page.locator('#quietroll-coverage')).toContainText(
       'Subtitle filtering unavailable',
     );
     await page.getByRole('button', { name: 'Synthetic ad transition', exact: true }).click();
-    await expect(popup.locator('#audio-phase')).toHaveText('unavailable');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
     await expect(popup.locator('#occurrences li')).toHaveCount(0);
     expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
     expect(extension.errors).toEqual([]);
@@ -1512,11 +1625,11 @@ test('tab/document targeting, stale actions and page messages cannot mutate stor
   try {
     const first = await start(extension.context);
     const popup = await openPopup(extension.context, extension.worker, extension.id, first);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     const original = await readPlayer(popup);
     const second = await start(extension.context, 'japanese', 'SECOND');
     await activeTab(extension.worker, second);
-    await expect(popup.locator('#audio-language')).toHaveText('ja-JP');
+    await expect(popup.locator('#audio-language')).toHaveText('Japanese (Japan)');
     const rejected = (await popup.evaluate(
       async (target) =>
         chrome.runtime.sendMessage({ type: 'player:action', target, action: 'seek', id: 'x' }),
@@ -1564,8 +1677,8 @@ test('cross-origin Vilos frame receives metadata and actions bind to its exact d
     await frame.getByRole('button', { name: 'English audio + CC', exact: true }).click();
     await expect(frame.locator('#fixture-state')).toContainText('Ready: english');
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
-    await expect(popup.locator('#subtitle-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
     const current = await readPlayer(popup);
     expect(current.target.frameId).toBeGreaterThan(0);
     await popup.locator('.timestamp').first().click();
@@ -1599,7 +1712,7 @@ test('occurrence exceptions survive browser restart and clearing them updates an
   try {
     let page = await start(extension.context);
     let popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     await popup.locator('.ignore').first().click();
     await expect(popup.locator('.ignore').first()).toHaveText('Unignore');
     await extension.cleanup(false);
@@ -1646,7 +1759,7 @@ test('timestamp seek keeps SDK controls in sync so paused playback resumes and p
       .toBeGreaterThan(0.3);
     await page.locator('video').evaluate((v: HTMLVideoElement) => v.pause());
     const popup = await openPopup(extension.context, extension.worker, extension.id, page);
-    await expect(popup.locator('#audio-phase')).toHaveText('active');
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
     const seeks = Number(await page.locator('#sdk-seeks').textContent());
     await popup.locator('.timestamp').first().click();
     await expect(page.locator('#sdk-seeks')).toHaveText(String(seeks + 1));

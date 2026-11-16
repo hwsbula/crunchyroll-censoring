@@ -5,8 +5,44 @@ import { send } from './shared/protocol.ts';
 import { element, errorMessage, message } from './shared/ui.ts';
 import { BACKUP_LIMIT, readSettingsBackup } from './core/backup.ts';
 import { record } from './core/settings.ts';
+import {
+  saveDeveloperTools,
+  showDeveloperTools,
+  watchDeveloperTools,
+} from './shared/developer-tools.ts';
 let state: SavedState | null = null;
 let formRevision = 0;
+const developerToggle = element<HTMLInputElement>('#developer-tools');
+watchDeveloperTools(
+  (enabled) => {
+    developerToggle.checked = enabled;
+    developerToggle.disabled = false;
+    showDeveloperTools(enabled, developerToggle);
+    element('#developer-status').textContent = enabled
+      ? 'Developer tools are visible on this device.'
+      : 'Developer tools are hidden. Filtering continues normally.';
+    element('#developer-status').classList.remove('error');
+  },
+  (error) => {
+    developerToggle.disabled = true;
+    element('#developer-status').textContent = errorMessage(error);
+    element('#developer-status').classList.add('error');
+  },
+);
+developerToggle.addEventListener('change', () => {
+  const enabled = developerToggle.checked;
+  developerToggle.disabled = true;
+  void saveDeveloperTools(enabled)
+    .catch((error) => {
+      developerToggle.checked = !enabled;
+      element('#developer-status').textContent = errorMessage(error);
+      element('#developer-status').classList.add('error');
+    })
+    .finally(() => {
+      developerToggle.disabled = false;
+    });
+});
+element('#version').textContent = chrome.runtime.getManifest().version;
 const builtins = element('#builtins');
 const groups = TERM_GROUPS.map((group) => {
   const section = document.createElement('section');

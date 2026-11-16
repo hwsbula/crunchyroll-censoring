@@ -21,9 +21,9 @@ const names = [
   'LISTING.md',
   'PRIVACY-AND-PERMISSIONS.md',
   'REVIEWER-INSTRUCTIONS.md',
-  'PUBLISH-UNLISTED.md',
+  'PUBLISH.md',
   'PRIVACY.md',
-  '01-settings-sync.jpg',
+  '01-settings.jpg',
   '02-term-controls.jpg',
 ];
 const sha = createHash('sha256').update(archive).digest('hex');
@@ -36,13 +36,13 @@ for (const name of [
   'LISTING.md',
   'PRIVACY-AND-PERMISSIONS.md',
   'REVIEWER-INSTRUCTIONS.md',
-  'PUBLISH-UNLISTED.md',
+  'PUBLISH.md',
 ])
   await cp(join(root, 'store', name), join(kit, name));
 await cp(join(root, 'docs', 'PRIVACY.md'), join(kit, 'PRIVACY.md'));
 // These are actual UI screenshots made by the release browser suite, not mockups.
 for (const [source, name] of [
-  ['/tmp/crunchyroll-store-sync.jpg', '01-settings-sync.jpg'],
+  ['/tmp/crunchyroll-store-settings.jpg', '01-settings.jpg'],
   ['/tmp/crunchyroll-store-terms.jpg', '02-term-controls.jpg'],
 ]) {
   const bytes = await readFile(source);
