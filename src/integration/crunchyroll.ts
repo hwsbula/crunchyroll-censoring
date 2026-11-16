@@ -624,6 +624,8 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
             ),
         );
         return;
+      } else if (command.action === 'timing' && typeof command.id === 'string') {
+        engine.correctAudioTiming(command.id, command.offset);
       } else if (command.action === 'retry') {
         void retry().then(() => send('response', { ok: true }, requestId));
         return;

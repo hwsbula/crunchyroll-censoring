@@ -104,6 +104,12 @@ export function activeTerms(settings: Settings): string[] {
   const disabled = new Set(settings.disabledBuiltins);
   return [...new Set([...BUILTINS.filter((term) => !disabled.has(term)), ...settings.custom])];
 }
+// Session-local caption timing correction; never part of synced preferences.
+export function parseTimingOffset(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 300)
+    throw new Error('Timing correction must be between -300 and +300 seconds.');
+  return Math.round(value * 1000) / 1000;
+}
 export function english(language: string | null): boolean {
   return !!language && /^en(?:[-_][a-z0-9]+)*$/i.test(language);
 }

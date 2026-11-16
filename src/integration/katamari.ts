@@ -4,6 +4,7 @@ import type { FilterStatus, Match, Session, Track } from '../core/types.ts';
 import { DisplayCueIndex, redactDisplaySegments, resolveSubtitleLabel } from './caption-display.ts';
 import type { SubtitleSelection } from './caption-display.ts';
 import { checkedSubtitleLabel, TrackMenuProbe, TRACK_MENU } from './track-menu.ts';
+import { CaptionTimingGuard } from './caption-timing.ts';
 
 const menuSelector = TRACK_MENU;
 const unavailable = (reason: string): FilterStatus => ({
@@ -69,9 +70,12 @@ class OverlayRenderer implements Renderer {
   readonly format: Track['document']['format'];
   private textTiming = false;
   readonly index: DisplayCueIndex;
+  private timingGuard = new CaptionTimingGuard();
+  private reportTiming: () => void;
+  private getOffset: () => number;
   get description(): string {
     return this.textTiming
-      ? `English captions filtered by exact text in the selected track (${this.language}). Displayed cue timing differs from the caption file; audio timing and timestamp links still use the file. Check audio synchronization.`
+      ? `English captions filtered by exact text in the selected track (${this.language}). Displayed cue timing differs from the current timing setting. Check the separate audio status and episode timing correction.`
       : `English captions filtered in the identified Bitmovin overlay before browser paint (${this.language}).`;
   }
   private originals = new Map<Text, OriginalNode>();
@@ -91,6 +95,8 @@ class OverlayRenderer implements Renderer {
     report: (problem: FilterStatus | null) => void,
     wasVerified = false,
     index?: DisplayCueIndex,
+    reportTiming: () => void = () => {},
+    getOffset: () => number = () => 0,
   ) {
     this.layer = layer;
     this.video = video;
@@ -99,6 +105,8 @@ class OverlayRenderer implements Renderer {
     this.language = track.language;
     this.format = track.document.format;
     this.index = index ?? new DisplayCueIndex(track.document.cues);
+    this.reportTiming = reportTiming;
+    this.getOffset = getOffset;
     this.report = report;
     this.verified = wasVerified;
   }
@@ -107,6 +115,7 @@ class OverlayRenderer implements Renderer {
     this.refresh();
   }
   restore(): void {
+    this.timingGuard.reset();
     this.matches = null;
     this.censored.clear();
     for (const [node, value] of this.originals)
@@ -154,6 +163,7 @@ class OverlayRenderer implements Renderer {
     try {
       segments = this.segments();
     } catch {
+      this.timingGuard.reset();
       this.report(
         unavailable(
           'the caption overlay markup is unsupported. Original captions remain unchanged.',
@@ -162,10 +172,11 @@ class OverlayRenderer implements Renderer {
       return;
     }
     const displayed = segments.map((part) => part.text).join('');
-    const active = this.track.document.cues.filter(
-      (cue) => cue.start <= this.video.currentTime && cue.end > this.video.currentTime,
-    );
+    const offset = this.getOffset();
+    const time = this.video.currentTime - offset;
+    const active = this.track.document.cues.filter((cue) => cue.start <= time && cue.end > time);
     if (!displayed.trim()) {
+      this.timingGuard.reset();
       this.mismatchSince = null;
       const hasCue = active.some((cue) => cue.text.trim());
       if (hasCue && this.emptySince === null) this.emptySince = performance.now();
@@ -187,6 +198,7 @@ class OverlayRenderer implements Renderer {
     this.emptySince = null;
     const found = this.index.match(displayed, active, this.matches);
     if (found.kind === 'ambiguous') {
+      this.timingGuard.reset();
       this.report(
         unavailable(
           'displayed captions match multiple cue identities and current timing cannot distinguish them. Original captions remain unchanged.',
@@ -195,6 +207,7 @@ class OverlayRenderer implements Renderer {
       return;
     }
     if (found.kind === 'missing') {
+      this.timingGuard.reset();
       this.mismatchSince ??= performance.now();
       this.report(
         performance.now() - this.mismatchSince < 250
@@ -209,6 +222,18 @@ class OverlayRenderer implements Renderer {
       return;
     }
     this.textTiming = found.timing === 'text';
+    const visible =
+      this.layer.getClientRects().length > 0 &&
+      getComputedStyle(this.layer).visibility !== 'hidden';
+    if (
+      this.timingGuard.observe(
+        visible && this.textTiming ? found.cues[0]! : null,
+        this.video,
+        performance.now(),
+        offset,
+      )
+    )
+      this.reportTiming();
     this.mismatchSince = null;
     const replacements = redactDisplaySegments(
       segments.map((part) => part.text),
@@ -221,7 +246,7 @@ class OverlayRenderer implements Renderer {
       this.originals.get(node)!.applied = value;
       if (node.data !== value) node.data = value;
     }
-    if (this.layer.getClientRects().length && getComputedStyle(this.layer).visibility !== 'hidden')
+    if (visible)
       for (const cue of found.cues)
         if (this.matches.get(cue.key)?.length) this.censored.add(cue.key);
     this.verified = true;
@@ -407,6 +432,8 @@ export class KatamariCaptions {
         (problem) => this.engine.setRendererProblem(problem),
         wasVerified,
         index,
+        () => this.engine.flagCaptionTiming(track.id),
+        () => this.engine.captionOffset(track.id),
       );
       this.engine.setRendererProblem(null);
       this.engine.setRenderer(this.renderer);

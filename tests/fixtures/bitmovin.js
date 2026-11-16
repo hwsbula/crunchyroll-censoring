@@ -23,7 +23,7 @@ const url = (spanish = false) =>
   `https://www.crunchyroll.com/${spanish ? 'spanish' : 'fixture'}.vtt`;
 
 function audio() {
-  const count = 8000 * 12;
+  const count = 8000 * (12 + Math.abs(captionDelay));
   const data = new DataView(new ArrayBuffer(44 + count * 2));
   const write = (at, text) =>
     [...text].forEach((char, index) => data.setUint8(at + index, char.charCodeAt(0)));

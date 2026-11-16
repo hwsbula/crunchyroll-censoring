@@ -1,4 +1,4 @@
-import { record } from './core/settings.ts';
+import { record, parseTimingOffset } from './core/settings.ts';
 import { SettingsRepository } from './shared/repository.ts';
 import type { Store } from './shared/repository.ts';
 import {
@@ -109,7 +109,12 @@ async function targetPlayer(target: Target): Promise<RoutedPlayer> {
   if (!current) throw new Error('The episode or player changed. Refresh the popup.');
   return current;
 }
-async function frameCommand(target: Target, action: string, id?: string): Promise<void> {
+async function frameCommand(
+  target: Target,
+  action: string,
+  id?: string,
+  offset?: number,
+): Promise<void> {
   const response = record(
     (await chrome.tabs.sendMessage(
       target.tabId,
@@ -121,6 +126,7 @@ async function frameCommand(target: Target, action: string, id?: string): Promis
           version: target.version,
           action,
           ...(id ? { id } : {}),
+          ...(offset === undefined ? {} : { offset }),
         },
       },
       { documentId: target.documentId },
@@ -203,6 +209,13 @@ async function handleUi(raw: Record<string, unknown>): Promise<unknown> {
     case 'player:action': {
       const target = parseTarget(raw.target);
       const current = await targetPlayer(target);
+      if (raw.action === 'timing') {
+        const offset = parseTimingOffset(raw.offset);
+        if (typeof raw.id !== 'string' || raw.id !== current.snapshot.audioTiming?.track)
+          throw new Error('The English CC track changed. Refresh the popup.');
+        await frameCommand(target, 'timing', raw.id, offset);
+        return null;
+      }
       if (raw.action === 'retry') {
         await frameCommand(target, 'retry');
         return null;

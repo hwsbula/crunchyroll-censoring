@@ -72,6 +72,8 @@ export interface Occurrence extends Match {
   ignored: boolean;
   audioCensored: boolean;
   textCensored: boolean;
+  timingUnreliable?: boolean;
+  playbackTime?: number | null;
 }
 export interface PlayerSnapshot {
   instance: string;
@@ -86,4 +88,5 @@ export interface PlayerSnapshot {
   occurrences: Occurrence[];
   total: number;
   trackSummary: string;
+  audioTiming?: { track: string | null; offset: number };
 }

@@ -63,6 +63,26 @@
           matching CC. Hardcoded subtitles cannot be replaced.
         </p>
       </details>
+      <details class="track-details" id="timing-controls">
+        <summary>Timing correction (this episode)</summary>
+        <p class="help">
+          Applies to matching English-dub CC in this tab. Positive seconds censor later; negative
+          seconds censor earlier. Verify against two spoken lines. Resets on episode changes or
+          reload.
+        </p>
+        <label for="timing-offset">Shift CC audio and timestamps (seconds)</label>
+        <input
+          id="timing-offset"
+          type="number"
+          min="-300"
+          max="300"
+          step="0.1"
+          value="0"
+          disabled
+        />
+        <button id="timing-apply" type="button" disabled>Apply correction</button>
+        <p id="timing-status" class="help" role="status">Matching English-dub CC required.</p>
+      </details>
       <section class="review" aria-labelledby="review-title">
         <div class="review-heading">
           <h2 id="review-title">Occurrences <span id="count">0</span></h2>
