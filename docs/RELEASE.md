@@ -109,12 +109,12 @@ Delivered `dist/`, `artifacts/crunchyroll-censoring-0.1.8.zip`, `artifacts/crunc
 
 ## 0.1.9 manual episode timing correction
 
-The reported 2:30 → 2:50 and 8:52 → 9:12 examples support a **+20 second** correction for that episode. Version 0.1.9 shifts loaded matching English-dub CC audio intervals and popup navigation by a user-entered, episode-local offset. It does not estimate word timings or mute reactively from a newly displayed subtitle. Automatic clock mapping and universal dub coverage remain unmet.
+**Investigation addendum:** the reported 2:30 → 2:50 and 8:52 → 9:12 examples compare source times with the player UI, not the native media clock. A shared +20 audio/seek correction is not established; see [clock investigation](TIMING-INVESTIGATION.md). Version 0.1.9 shifts loaded matching English-dub CC audio intervals and popup navigation by a user-entered, episode-local offset. It does not estimate word timings or mute reactively from a newly displayed subtitle. Automatic clock mapping and universal dub coverage remain unmet.
 
 Focused live checklist (requires authorized Crunchyroll access):
 
 1. Update the existing installation folder, Reload the extension, refresh the episode, and select English audio with matching English [CC]. Confirm version 0.1.9 and both coverage statuses.
-2. In **Timing correction (this episode)** enter **20**, then **Apply correction**. The supplied CC timestamps should change from 2:30 and 8:52 to 2:50 and 9:12. Seek, play through each, and verify muting starts before the speech and ends after its full cue. It can silence surrounding dialogue.
+2. First confirm that the native media clock equals the player UI and that matching CC cue onsets are consistently +20 later on that native clock. If those checks fail, stop this manual-offset test and investigate the separate mappings. Only with those checks satisfied, enter **20** in **Timing correction (this episode)**, then **Apply correction**. The supplied CC timestamps should change from 2:30 and 8:52 to 2:50 and 9:12. Seek, play through each, and verify muting starts before the speech and ends after its full cue. It can silence surrounding dialogue.
 3. Ignore one match, then Unignore it. In a multi-match cue, one ignored match must not unmute other enabled matches. Check subtitles restore from the original text and that playback resumes after timestamp seeking.
 4. With loaded CC still available, turn visible subtitles off and replay a corrected interval. Confirm audio still filters. Test pauses, seek/replay and playback-rate changes; manual mute and volume must remain yours.
 5. Close/reopen the popup: +20 should remain. Start another tab: correction should be zero. Let autoplay advance or reload: correction must reset. Verify the next episode independently; do not assume +20 applies to it. Japanese audio stays untouched.
