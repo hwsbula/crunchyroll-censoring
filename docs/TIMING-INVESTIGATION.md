@@ -6,6 +6,8 @@
 
 The user reports source-list timestamps 2:30 and 8:52 for lines heard at 2:50 and 9:12. They confirmed that the latter are the times in **Crunchyroll's playback controls**, that the mismatch survives a fresh reload, and that it occurs both with and without Skip Intro. Text is displayed at the right moment and censored successfully.
 
+**New user measurement:** at a displayed 10:00, `video.currentTime` returned **600.75**. Interpreting the displayed time as minute:second, its floor is 600: the media and UI clocks agree within the UI's one-second rounding at this sample. Thus a 20-second UI-versus-media difference does not explain that instant. The separate-clock reproductions remain general implementation weaknesses, but should not be presented as the demonstrated cause of this episode. The leading remaining investigation is the actual caption resource and its time mapping. The requested track-format/selected-option details and actual source timing metadata are still outstanding.
+
 These observations establish a +20-second difference between the listed source time and the player UI at two points, 382 seconds apart. They do **not** measure the underlying video element's time. Therefore the earlier recommendation to add +20 to both audio and links was premature: those operations may use different clocks. Do not treat 0.1.9's combined manual offset as a general fix or choose it from UI timestamps alone.
 
 Let C be source cue time, M the underlying video element's `currentTime`, and P the player UI/SDK timeline. The report gives P − C = 20. Audio needs the C → M mapping; SDK seeking needs C → P, and seek completion must use the correct target clock. P − C does not determine M − C.
