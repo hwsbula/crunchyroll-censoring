@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CrunchyRoll Censoring — Term settings</title>
+    <title>CrunchyRoll Censoring — Settings</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="options.js"></script>
   </head>
@@ -20,55 +20,15 @@
         <p class="eyebrow">YOUR FILTER</p>
         <h2 class="page-title">Choose what gets censored.</h2>
         <p class="intro">
-          Literal English words and phrases. Your changes apply to active players after saving.
+          Choose your words, save your settings, and keep watching. Changes apply to open players.
         </p>
-        <section class="card" aria-labelledby="sync-heading">
-          <h2 id="sync-heading">Sync and settings backup</h2>
-          <label class="check"
-            ><input id="sync-enabled" type="checkbox" disabled /> Use Chrome settings sync</label
-          >
-          <p class="help">
-            Chrome can carry saved preferences, custom terms and built-in choices between
-            installations of this extension with the same ID. Sign into the same Chrome profile
-            account and enable sync. Captions, playback logs and episode-specific Ignore choices
-            stay local. Chrome controls delivery; this extension cannot verify your sign-in or
-            another device.
-          </p>
-          <p id="sync-status" class="status" role="status" aria-live="polite">
-            Checking Chrome Sync storage…
-          </p>
-          <div class="actions">
-            <button id="sync-retry" type="button">Retry sync</button>
-            <button id="sync-local" type="button">Upload this device's saved settings</button>
-            <button id="sync-remote" type="button">Use synced settings</button>
-            <button id="sync-clear" type="button">Remove synced settings</button>
-          </div>
-          <div id="sync-confirm" class="confirmation" hidden>
-            <p id="sync-confirm-text"></p>
-            <button id="sync-confirm-yes" type="button">Confirm</button>
-            <button id="sync-confirm-no" type="button">Cancel</button>
-          </div>
-          <h3 class="backup-heading">Move from an unpacked installation</h3>
-          <p class="help">
-            Export saved settings before changing extension installations. Import the file into the
-            store version, review it and confirm replacement. Backups contain word lists and
-            preferences only; local Ignore choices are retained on import. Unsaved form edits are
-            not exported.
-          </p>
-          <div class="actions">
-            <button id="export-settings" type="button">Export saved settings</button>
-          </div>
-          <label for="import-settings">Choose settings backup (JSON)</label>
-          <input id="import-settings" type="file" accept=".json,application/json" />
-          <div id="import-preview" class="confirmation" hidden>
-            <p id="import-summary"></p>
-            <button id="import-confirm" type="button">Replace saved settings</button>
-            <button id="import-cancel" type="button">Cancel import</button>
-          </div>
-        </section>
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#playback">Playback</a><a href="#word-lists">Word lists</a>
+          <a href="#sync">Sync &amp; backup</a><a href="#developer">Developer tools</a>
+        </nav>
         <form id="settings-form">
           <fieldset id="fields" disabled>
-            <section class="card">
+            <section class="card" id="playback">
               <h2>Playback preferences</h2>
               <label class="check"><input id="enabled" type="checkbox" /> Enable filtering</label
               ><label for="mode">Default audio mode</label
@@ -78,29 +38,32 @@
                 <option value="japanese">Manual: Japanese audio</option>
               </select>
               <p class="help">
-                Reliable detected audio takes priority over an override. An override never supplies
-                missing captions.
+                Automatic is recommended. Choose a manual mode only when the audio language cannot
+                be detected. English audio still needs matching closed captions.
               </p>
               <label class="check"
                 ><input id="reveal" type="checkbox" /> Reveal original words and context in the
                 popup</label
               >
-              <div class="padding-fields">
-                <div>
-                  <label for="before">Lead-in (ms)</label
-                  ><input id="before" type="number" min="0" max="300" step="1" required />
+              <div data-developer hidden>
+                <h3>Audio padding</h3>
+                <div class="padding-fields">
+                  <div>
+                    <label for="before">Lead-in (ms)</label
+                    ><input id="before" type="number" min="0" max="300" step="1" required />
+                  </div>
+                  <div>
+                    <label for="after">Trailing padding (ms)</label
+                    ><input id="after" type="number" min="0" max="300" step="1" required />
+                  </div>
                 </div>
-                <div>
-                  <label for="after">Trailing padding (ms)</label
-                  ><input id="after" type="number" min="0" max="300" step="1" required />
-                </div>
+                <p class="help">
+                  0–300 ms each. Whole cues are silenced; surrounding dialogue can be lost. These
+                  are media-time intervals, including at different playback speeds.
+                </p>
               </div>
-              <p class="help">
-                0–300 ms each. Whole cues are silenced; surrounding dialogue can be lost. These are
-                media-time intervals, including at different playback speeds.
-              </p>
             </section>
-            <section class="card">
+            <section class="card" id="word-lists">
               <h2>Custom words and phrases</h2>
               <p class="help">
                 One entry per line, up to 250 entries and 100 characters each. This editor shows
@@ -134,19 +97,63 @@
               <p id="term-empty" class="help" hidden>No built-in terms match this search.</p>
               <div id="builtins"></div>
             </section>
-            <div class="actions">
+            <div class="actions save-bar">
               <button id="save" class="primary" type="submit">Save settings</button
               ><button id="reload" type="button">Reload saved settings</button>
             </div>
           </fieldset>
         </form>
         <p id="status" class="status" role="status" aria-live="polite">Loading saved settings…</p>
+        <section class="card" id="sync" aria-labelledby="sync-heading">
+          <h2 id="sync-heading">Sync and settings backup</h2>
+          <label class="check"
+            ><input id="sync-enabled" type="checkbox" disabled /> Use Chrome settings sync</label
+          >
+          <p class="help">
+            Chrome can carry saved preferences, custom terms and built-in choices between
+            installations of this extension with the same ID. Sign into the same Chrome profile
+            account and enable sync. Captions, playback logs and episode-specific Ignore choices
+            stay local. Chrome controls delivery; this extension cannot verify your sign-in or
+            another device.
+          </p>
+          <p id="sync-status" class="status" role="status" aria-live="polite">
+            Checking Chrome Sync storage…
+          </p>
+          <div class="actions">
+            <button id="sync-retry" type="button">Retry sync</button>
+            <button id="sync-local" type="button">Upload this device's saved settings</button>
+            <button id="sync-remote" type="button">Use synced settings</button>
+            <button id="sync-clear" type="button">Remove synced settings</button>
+          </div>
+          <div id="sync-confirm" class="confirmation" hidden>
+            <p id="sync-confirm-text"></p>
+            <button id="sync-confirm-yes" type="button">Confirm</button>
+            <button id="sync-confirm-no" type="button">Cancel</button>
+          </div>
+          <h3 class="backup-heading">Back up or transfer your settings</h3>
+          <p class="help">
+            Export saved settings before changing extension installations. Import the file into the
+            store version, review it and confirm replacement. Backups contain word lists and
+            preferences only; local Ignore choices are retained on import. Unsaved form edits are
+            not exported.
+          </p>
+          <div class="actions">
+            <button id="export-settings" type="button">Export saved settings</button>
+          </div>
+          <label for="import-settings">Choose settings backup (JSON)</label>
+          <input id="import-settings" type="file" accept=".json,application/json" />
+          <div id="import-preview" class="confirmation" hidden>
+            <p id="import-summary"></p>
+            <button id="import-confirm" type="button">Replace saved settings</button>
+            <button id="import-cancel" type="button">Cancel import</button>
+          </div>
+        </section>
         <section class="card exceptions">
           <h2>Occurrence exceptions</h2>
           <p id="exception-count">Loading…</p>
           <p class="help">
-            Ignore applies to one exact episode/version, track, cue, and match. Exceptions survive
-            restart. Playback logs and complete subtitle tracks are never saved.
+            Each Ignore choice applies only to that occurrence in that episode. It stays saved after
+            Chrome restarts. Clear your choices below to filter those occurrences again.
           </p>
           <button id="clear" type="button" disabled>Clear saved exceptions</button>
           <div id="clear-confirm" hidden>
@@ -178,11 +185,25 @@
             >
           </p>
         </section>
+        <section class="card" id="developer" aria-labelledby="developer-heading">
+          <h2 id="developer-heading">Developer tools</h2>
+          <label class="check"
+            ><input id="developer-tools" type="checkbox" disabled /> Show developer tools</label
+          >
+          <p class="help">
+            Show caption diagnostics, episode IDs, manual timing correction and audio padding
+            controls. Off by default. This display preference saves automatically on this device and
+            does not sync. Coverage warnings are always visible.
+          </p>
+          <p id="developer-status" class="status" role="status" aria-live="polite">
+            Loading display preference…
+          </p>
+        </section>
       </main>
       <footer>
         <p>
-          CrunchyRoll Censoring 0.1.9 · Independent integration preview · No analytics or cloud
-          transcription
+          CrunchyRoll Censoring <span id="version"></span> · Independent extension · No analytics or
+          cloud transcription
         </p>
       </footer>
     </div>

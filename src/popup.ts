@@ -4,6 +4,7 @@ import type { Occurrence, SavedState } from './core/types.ts';
 import { send } from './shared/protocol.ts';
 import type { RoutedPlayer } from './shared/protocol.ts';
 import { element, errorMessage, message, time } from './shared/ui.ts';
+import { showDeveloperTools, watchDeveloperTools } from './shared/developer-tools.ts';
 
 let state: SavedState | null = null;
 let player: RoutedPlayer | null = null;
@@ -12,11 +13,25 @@ let busy = false;
 let signature = '';
 let timingTarget = '';
 let timingDirty = false;
+let developerTools = false;
+function languageName(value: string | null | undefined): string {
+  if (!value) return 'Not identified';
+  if (value === 'off') return 'Off';
+  try {
+    return (
+      new Intl.DisplayNames(['en'], { type: 'language' }).of(value.replaceAll('_', '-')) ?? value
+    );
+  } catch {
+    return value;
+  }
+}
 function setControlState(): void {
   if (!state) return;
   element<HTMLInputElement>('#enabled').checked = state.settings.enabled;
   element<HTMLInputElement>('#reveal').checked = state.settings.reveal;
   element<HTMLSelectElement>('#mode').value = state.settings.mode;
+  element('#mode-summary').textContent =
+    `Audio mode: ${{ auto: 'Automatic', english: 'Manual English', japanese: 'Manual Japanese' }[state.settings.mode]}`;
   for (const selector of ['#enabled', '#reveal', '#mode'])
     element<HTMLInputElement>(selector).disabled = false;
 }
@@ -40,6 +55,7 @@ function renderOccurrences(): void {
   const nextSignature = JSON.stringify([
     rows,
     state?.settings,
+    developerTools,
     rows.map((row) => now < (row.playbackTime ?? row.time)),
   ]);
   if (signature === nextSignature) return;
@@ -66,7 +82,9 @@ function renderOccurrences(): void {
     timestamp.disabled = !!unreliable;
     timestamp.title = unreliable
       ? 'Caption-file time; playback timing is unverified. Seeking is disabled.'
-      : `Caption-file time: ${time(row.time)}. Playback time: ${time(shownTime)}.`;
+      : developerTools
+        ? `Caption-file time: ${time(row.time)}. Playback time: ${time(shownTime)}.`
+        : `Jump to ${time(shownTime)}`;
     timestamp.setAttribute(
       'aria-label',
       unreliable
@@ -138,27 +156,46 @@ function renderPlayer(): void {
   element('#timing-status').textContent = !correction?.track
     ? 'Matching English-dub CC required.'
     : `Playback metadata: +${correction.automaticOffset ?? 0} seconds. Additional manual correction: ${correction.offset > 0 ? '+' : ''}${correction.offset} seconds. This episode and tab only.`;
+  element('#manual-notice').hidden = !correction?.offset;
+  element('#connection').textContent = snapshot?.episode
+    ? 'Connected to the current episode'
+    : 'Open a Crunchyroll episode to get started';
   element('#episode').textContent = snapshot?.episode
     ? `Episode ${snapshot.episode} · version ${snapshot.version}`
     : 'No connected Crunchyroll episode';
-  element('#audio-language').textContent = snapshot?.audioLanguage ?? 'Unresolved';
-  element('#subtitle-language').textContent =
-    snapshot?.subtitleLanguage ?? 'Unresolved / unsupported renderer';
+  element('#audio-language').textContent = languageName(snapshot?.audioLanguage);
+  element('#subtitle-language').textContent = languageName(snapshot?.subtitleLanguage);
   element('#selected-mode').textContent =
     snapshot?.mode ?? 'An override resolves missing detection only; captions are still required.';
   for (const key of ['audio', 'subtitle'] as const) {
     const status = key === 'audio' ? snapshot?.audio : snapshot?.subtitles;
     const phase = element(`#${key}-phase`);
-    phase.textContent =
+    const currentPhase =
       status?.phase ?? (!state ? 'loading' : state.settings.enabled ? 'unavailable' : 'disabled');
-    phase.dataset.phase = status?.phase ?? 'unavailable';
-    element(`#${key}-reason`).textContent =
+    phase.textContent = {
+      active: 'Active',
+      loading: 'Checking',
+      disabled: 'Off',
+      unavailable: 'Unavailable',
+      error: 'Error',
+    }[currentPhase];
+    phase.dataset.phase = currentPhase;
+    const reason =
       status?.reason ??
       (state && !state.settings.enabled
         ? 'Filtering is disabled.'
         : key === 'audio'
           ? 'Audio filtering unavailable: connect to an accessible episode player.'
-          : 'Subtitle filtering unavailable: no connected English renderer.');
+          : 'Subtitle filtering unavailable: open an episode and select English subtitles.');
+    element(`#${key}-diagnostic`).textContent = reason;
+    // Keep every unavailable/error explanation visible. Only successful-path
+    // implementation detail belongs behind the developer display setting.
+    element(`#${key}-reason`).textContent =
+      currentPhase === 'active'
+        ? key === 'audio'
+          ? 'Mutes matching English caption lines. Nearby dialogue may also be silenced.'
+          : reason
+        : reason;
   }
   element('#track-summary').textContent =
     snapshot?.trackSummary ??
@@ -240,7 +277,7 @@ element('#timing-offset').addEventListener('input', () => {
 element('#timing-apply').addEventListener('click', () => {
   const target = player?.target;
   const track = player?.snapshot.audioTiming?.track;
-  if (!target || !track) return;
+  if (!developerTools || !target || !track) return;
   void perform(async () => {
     const input = element<HTMLInputElement>('#timing-offset');
     if (!input.value.trim() || !input.checkValidity())
@@ -251,8 +288,29 @@ element('#timing-apply').addEventListener('click', () => {
     if (input.value === submitted) timingDirty = false;
   });
 });
+element('#timing-reset').addEventListener('click', () => {
+  const target = player?.target;
+  const track = player?.snapshot.audioTiming?.track;
+  if (!target || !track) return;
+  void perform(async () => {
+    await send({ type: 'player:action', target, action: 'timing', id: track, offset: 0 });
+    timingDirty = false;
+  });
+});
 element('#settings').addEventListener('click', () => {
   void chrome.runtime.openOptionsPage().catch((error) => message(errorMessage(error), true));
 });
+watchDeveloperTools(
+  (enabled) => {
+    developerTools = enabled;
+    showDeveloperTools(enabled, element('#settings'));
+    element('#developer-error').hidden = true;
+    renderOccurrences();
+  },
+  (error) => {
+    element('#developer-error').textContent = errorMessage(error);
+    element('#developer-error').hidden = false;
+  },
+);
 void refresh();
 setInterval(() => void refresh(), 1000);

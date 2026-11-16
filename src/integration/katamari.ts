@@ -75,8 +75,8 @@ class OverlayRenderer implements Renderer {
   private getOffset: () => number;
   get description(): string {
     return this.textTiming
-      ? `English captions filtered by exact text in the selected track (${this.language}). Displayed cue timing differs from the current timing setting. Check the separate audio status and episode timing correction.`
-      : `English captions filtered in the identified Bitmovin overlay before browser paint (${this.language}).`;
+      ? 'English subtitles are filtered, but caption timing differs from playback. Check the audio filtering status; audio may be unavailable.'
+      : 'Matched words in English subtitles are replaced with ****.';
   }
   private originals = new Map<Text, OriginalNode>();
   private matches: ReadonlyMap<string, readonly Match[]> | null = null;

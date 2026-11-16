@@ -13,14 +13,14 @@
         <img src="icons/icon-32.png" alt="" width="30" height="30" />
         <div>
           <h1>CrunchyRoll Censoring</h1>
-          <p class="eyebrow">CRUNCHYROLL · LOCAL FILTER</p>
+          <p class="eyebrow">ENGLISH LANGUAGE FILTER</p>
         </div>
       </div>
       <label class="toggle"><input id="enabled" type="checkbox" disabled /> Enabled</label>
     </header>
     <main>
       <section class="connection" aria-label="Player connection">
-        <p id="episode" class="episode">Connecting to the episode…</p>
+        <p id="connection" class="episode">Connecting to the episode…</p>
         <dl class="languages">
           <div>
             <dt>Audio</dt>
@@ -31,13 +31,16 @@
             <dd id="subtitle-language">Unresolved</dd>
           </div>
         </dl>
-        <label for="mode">Language mode</label
-        ><select id="mode" disabled>
-          <option value="auto">Automatic detection</option>
-          <option value="english">Manual: English audio</option>
-          <option value="japanese">Manual: Japanese audio</option>
-        </select>
-        <p id="selected-mode" class="help">An override resolves missing language detection only.</p>
+        <details class="mode-details" id="mode-controls">
+          <summary id="mode-summary">Audio mode: Automatic</summary>
+          <label for="mode">Audio mode</label
+          ><select id="mode" disabled>
+            <option value="auto">Automatic detection</option>
+            <option value="english">Manual: English audio</option>
+            <option value="japanese">Manual: Japanese audio</option>
+          </select>
+          <p id="selected-mode" class="help">Checking the selected audio language…</p>
+        </details>
       </section>
       <section class="coverage" aria-label="Filtering coverage">
         <article>
@@ -52,18 +55,25 @@
             <h2>Subtitle filtering</h2>
             <span id="subtitle-phase" class="badge">Loading</span>
           </div>
-          <p id="subtitle-reason">Checking for a supported English renderer…</p>
+          <p id="subtitle-reason">Checking the selected English subtitles…</p>
         </article>
       </section>
-      <details class="track-details">
-        <summary>Caption source and coverage</summary>
+      <p id="manual-notice" class="manual-notice" hidden>
+        A manual timing adjustment is active for this episode.
+        <button id="timing-reset" type="button">Reset adjustment</button>
+      </p>
+      <details class="track-details" data-developer hidden>
+        <summary>Caption diagnostics</summary>
+        <p id="episode"></p>
         <p id="track-summary">Only current, identified English tracks can be filtered.</p>
+        <p id="audio-diagnostic"></p>
+        <p id="subtitle-diagnostic"></p>
         <p>
           Without word timestamps, the full caption cue is silenced. Some English dubs have no
           matching CC. Hardcoded subtitles cannot be replaced.
         </p>
       </details>
-      <details class="track-details" id="timing-controls">
+      <details class="track-details" id="timing-controls" data-developer hidden>
         <summary>Timing correction (this episode)</summary>
         <p class="help">
           Playback metadata automatically accounts for supported opening promos. Leave the
@@ -86,25 +96,23 @@
       </details>
       <section class="review" aria-labelledby="review-title">
         <div class="review-heading">
-          <h2 id="review-title">Occurrences <span id="count">0</span></h2>
+          <h2 id="review-title">Detected matches <span id="count">0</span></h2>
           <label class="reveal"
             ><input id="reveal" type="checkbox" disabled /> Reveal originals</label
           >
         </div>
-        <p class="help">
-          Detected matches are upcoming until playback. “Censored” records an applied audio or text
-          action.
-        </p>
+        <p class="help">Upcoming matches have not been censored yet.</p>
         <ol id="occurrences" class="occurrences" aria-label="Detected occurrences"></ol>
         <p id="empty" class="empty">Start a Crunchyroll episode to review its English captions.</p>
         <p id="limit" class="help" hidden></p>
       </section>
       <p id="status" class="status" role="status" aria-live="polite"></p>
+      <p id="developer-error" class="status error" role="alert" hidden></p>
     </main>
     <footer>
-      <button id="retry" type="button">Retry / rescan</button
-      ><button id="settings" type="button" class="primary">Term settings</button>
-      <p>Independent extension · integration preview</p>
+      <button id="retry" type="button">Refresh player</button
+      ><button id="settings" type="button" class="primary">Settings</button>
+      <p>Independent extension · Coverage depends on available captions</p>
     </footer>
   </body>
 </html>
