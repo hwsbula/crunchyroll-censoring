@@ -251,6 +251,329 @@ async function media(page: Page, time: number, play = false): Promise<void> {
   );
 }
 
+test('recovery: an already-ready video starts audio and text filtering without another metadata event', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?late-video');
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: replacing the video during a fresh playback request keeps that request valid', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?replace-video');
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: late subtitle selection is checked again without requiring a manual menu opening', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context, 'english', '?delayed-selection');
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(page.locator('#menu-reads')).toHaveText('2');
+    await expect(page.locator('#manual-menus')).toHaveText('0');
+    await expect(page.locator('[data-testid="track-selection-button"]')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: unchanged playback metadata can refresh without requiring the video to load again', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await page.evaluate(async () => {
+      await fetch('/playback/v4/TESTEN/web/chrome/play?fixture=dom-english');
+    });
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    // A later unannounced source reset is not authorized by that old response.
+    await page.locator('video').evaluate((v: HTMLVideoElement) => v.load());
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'unavailable');
+    await expect(popup.locator('#occurrences li')).toHaveCount(0);
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: metadata-only refresh retains an existing ASS renderer and manual timing correction', async () => {
+  const extension = await launch();
+  try {
+    const page = await start(extension.context);
+    await media(page, 1);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    const player = await readPlayer(popup);
+    const result = await popup.evaluate(
+      async (player) =>
+        chrome.runtime.sendMessage({
+          type: 'player:action',
+          target: player.target,
+          action: 'timing',
+          id: player.snapshot.audioTiming!.track,
+          offset: 4,
+        }),
+      player,
+    );
+    expect(result.ok).toBe(true);
+    await page.evaluate(async () => {
+      await fetch('/playback/v4/TESTEN/web/chrome/play?fixture=english');
+    });
+    await expect.poll(async () => (await readPlayer(popup)).snapshot.audioTiming?.offset).toBe(4);
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(page.locator('#fixture-caption')).toContainText('****');
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(false);
+    await media(page, 5, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: ordinary worker shutdown does not stop filtering and popup reconnects on wake', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await popup.close();
+    // CDP's ServiceWorker domain is scoped to the inspected origin. Inspect a
+    // static extension resource so no popup polling immediately wakes it again.
+    const inspection = await extension.context.newPage();
+    await inspection.goto(`chrome-extension://${extension.id}/manifest.json`);
+    const cdp = await extension.context.newCDPSession(inspection);
+    let workerStatus = '';
+    cdp.on('ServiceWorker.workerVersionUpdated', (event) => {
+      const version = event.versions.find(
+        (item) => item.scriptURL === `chrome-extension://${extension.id}/background.js`,
+      );
+      if (version) workerStatus = version.runningStatus;
+    });
+    await cdp.send('ServiceWorker.enable');
+    await cdp.send('ServiceWorker.stopAllWorkers');
+    // Playwright retains its Worker handle across suspension. Verify Chrome's
+    // actual lifecycle and target removal instead of counting wrapper objects.
+    await expect.poll(() => workerStatus).toBe('stopped');
+    expect(
+      (await cdp.send('Target.getTargets')).targetInfos.some(
+        (target) => target.type === 'service_worker',
+      ),
+    ).toBe(false);
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    const nextPopup = await extension.context.newPage();
+    await nextPopup.goto(`chrome-extension://${extension.id}/popup.html`);
+    await nextPopup.evaluate(async (url) => {
+      const [tab] = await chrome.tabs.query({ url });
+      await chrome.tabs.update(tab!.id!, { active: true });
+    }, page.url());
+    await expect.poll(() => workerStatus).toBe('running');
+    await expect(nextPopup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(nextPopup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await nextPopup.locator('.ignore').first().click();
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That damn class is full of ****!',
+    );
+    expect(extension.errors).toEqual([]);
+    await cdp.detach();
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: one failed caption download is retried using current observed metadata', async () => {
+  const extension = await launch();
+  let requests = 0;
+  try {
+    await extension.context.route('https://www.crunchyroll.com/fixture.vtt', async (route) => {
+      requests++;
+      if (requests === 1)
+        return route.fulfill({ status: 503, body: 'Synthetic transient failure' });
+      return route.fulfill({ contentType: 'text/vtt', body: vtt });
+    });
+    const page = await startOverlay(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    expect(requests).toBeGreaterThanOrEqual(3); // extension failure, site's own captions, recovery
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    expect(extension.errors.filter((error) => !error.includes('503'))).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: retries for another track do not expose working captions; manual refresh downloads failed data', async () => {
+  const extension = await launch();
+  let requests = 0;
+  let working = false;
+  try {
+    await extension.context.route(
+      '**/playback/v4/TESTEN/web/chrome/play?fixture=dom-english',
+      (route) =>
+        route.fulfill({
+          json: {
+            captions: {
+              'en-US': {
+                language: 'en-US',
+                format: 'vtt',
+                url: 'https://www.crunchyroll.com/fixture.vtt',
+              },
+            },
+            subtitles: {
+              'en-US': {
+                language: 'en-US',
+                format: 'vtt',
+                url: 'https://www.crunchyroll.com/retry.vtt',
+              },
+            },
+          },
+        }),
+    );
+    await extension.context.route('https://www.crunchyroll.com/retry.vtt', (route) => {
+      requests++;
+      return route.fulfill({
+        status: working ? 200 : 503,
+        contentType: 'text/vtt',
+        body: working ? vtt : 'Synthetic temporary failure',
+      });
+    });
+    const page = await startOverlay(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    const exposure = page.evaluate(async () => {
+      let originals = 0;
+      for (let frame = 0; frame < 420; frame++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (
+          /damn|shit/i.test(
+            document.querySelector('.bitmovinplayer-container ul')?.textContent ?? '',
+          )
+        )
+          originals++;
+      }
+      return originals;
+    });
+    await expect.poll(() => requests).toBe(4);
+    expect(await exposure).toBe(0);
+    working = true;
+    await popup.locator('#retry').click();
+    await expect.poll(() => requests).toBe(5);
+    await expect
+      .poll(async () => (await readPlayer(popup)).snapshot.trackSummary)
+      .toContain('subtitles en-US (VTT)');
+    await expect(popup.locator('#subtitle-phase')).toHaveAttribute('data-phase', 'active');
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    expect(extension.errors.filter((error) => !error.includes('503'))).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
+test('recovery: cached-page lifecycle resumes the same verified player and preserves manual mute', async () => {
+  const extension = await launch();
+  try {
+    const page = await startOverlay(extension.context);
+    const popup = await openPopup(extension.context, extension.worker, extension.id, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    const instance = (await readPlayer(popup)).snapshot.instance;
+    // Deterministic page-cache lifecycle events, not a claim of native BFCache eligibility.
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })),
+    );
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })),
+    );
+    await activeTab(extension.worker, page);
+    await expect(popup.locator('#audio-phase')).toHaveAttribute('data-phase', 'active');
+    expect((await readPlayer(popup)).snapshot.instance).toBe(instance);
+    await media(page, 1, true);
+    await expect
+      .poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.muted))
+      .toBe(true);
+    await expect(page.locator('.bitmovinplayer-container ul')).toHaveText(
+      'That **** class is full of ****!',
+    );
+    await page.locator('video').evaluate((v: HTMLVideoElement) => {
+      v.muted = true;
+      v.pause();
+    });
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await media(page, 8, true);
+    expect(await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)).toBe(true);
+    expect(extension.errors).toEqual([]);
+  } finally {
+    await extension.cleanup();
+  }
+});
+
 test('unpacked popup has truthful empty states; settings persist through popup and browser restart', async () => {
   let extension = await launch();
   const directory = extension.directory;

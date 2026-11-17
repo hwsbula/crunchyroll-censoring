@@ -379,6 +379,17 @@ export class FilterEngine {
     this.computeStatuses();
     if (this.audio.phase !== 'active') this.scheduler?.setIntervals([]);
   }
+  captureTiming(): { offsets: [string, number][]; problems: string[] } {
+    return { offsets: [...this.timingOffsets], problems: [...this.timingProblems] };
+  }
+  // Restore only after verifying identical captions, timeline and media binding.
+  // New episodes must always start without these session-local corrections.
+  restoreTiming(saved: ReturnType<FilterEngine['captureTiming']>): void {
+    const ids = new Set(this.session?.tracks.map((track) => track.id));
+    this.timingOffsets = new Map(saved.offsets.filter(([id]) => ids.has(id)));
+    this.timingProblems = new Set(saved.problems.filter((id) => ids.has(id)));
+    this.setTimelineReady(this.timelineReady);
+  }
   updateMetadata(session: Session): void {
     this.session = session;
     this.computeStatuses();

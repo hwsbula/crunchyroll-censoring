@@ -31,12 +31,16 @@ interface Probe {
 export class TrackMenuProbe {
   private current: Probe | null = null;
   private attempted: HTMLElement | null = null;
+  private attempts = 0;
+  private retryAfter = 0;
   get pending(): boolean {
     return this.current !== null;
   }
   start(container: HTMLElement, result: (label: string) => void): boolean {
     if (this.current) return true;
-    if (this.attempted === container) return false;
+    if (this.attempted === container && (this.attempts >= 3 || performance.now() < this.retryAfter))
+      return false;
+    if (this.attempted !== container) this.attempts = 0;
     const buttons = container.querySelectorAll('[data-testid="track-selection-button"]');
     const button = buttons[0];
     if (
@@ -50,6 +54,10 @@ export class TrackMenuProbe {
     )
       return false;
     this.attempted = container;
+    this.attempts++;
+    // Some player controls mount before their selected-track state arrives.
+    // Retry a timed-out read twice, with backoff, without changing selection.
+    this.retryAfter = performance.now() + (this.attempts === 1 ? 5000 : 10000);
     const observer = new MutationObserver(() => this.check());
     const probe: Probe = {
       container,
@@ -173,7 +181,10 @@ export class TrackMenuProbe {
       probe.focus.focus({ preventScroll: true });
   }
   private interrupted = (event: Event): void => {
-    if (event.isTrusted) this.cancel();
+    if (event.isTrusted) {
+      this.attempts = 3; // Do not reopen a probe the user interrupted.
+      this.cancel();
+    }
   };
   cancel(): void {
     if (this.current) this.close(this.current);
@@ -181,6 +192,8 @@ export class TrackMenuProbe {
   reset(): void {
     this.cancel();
     this.attempted = null;
+    this.attempts = 0;
+    this.retryAfter = 0;
   }
   dispose(): void {
     this.reset();

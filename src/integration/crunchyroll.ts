@@ -1,6 +1,7 @@
 import { PlayerSeekRouter } from './seek.ts';
 import { KatamariCaptions } from './katamari.ts';
 import { CoverageBanner } from './coverage.ts';
+import { CaptionDownloadError, CaptionLoader } from './caption-loader.ts';
 import { FilterEngine } from '../core/engine.ts';
 import type { Renderer } from '../core/engine.ts';
 import { parseCaptions } from '../core/captions.ts';
@@ -13,7 +14,6 @@ import {
   captionResources,
   englishResources,
   episodeId,
-  loadSession,
   parseSession,
   playbackVersion,
   resourceKey,
@@ -58,6 +58,9 @@ let path = location.pathname;
 let boundSource: string | null = null;
 let pendingSource = false;
 let sourceConfirmed = false;
+let sourceRevision = 0;
+let suspended = false;
+let resumeBinding: MediaBinding | null = null;
 let preparingUntil = 0;
 let readyRenderer: Renderer | null = null;
 let captionChangedBeforeSettings = false;
@@ -67,6 +70,7 @@ let lastWarning = '';
 let warning: HTMLDivElement | null = null;
 let observer: MutationObserver | null = null;
 const coverageBanner = new CoverageBanner();
+const captionLoader = new CaptionLoader((resource, signal) => readCaption(resource.url, signal));
 const katamari = new KatamariCaptions(
   engine,
   () => session,
@@ -88,6 +92,7 @@ function send(kind: string, payload: unknown, requestId?: string): void {
     );
 }
 function publish(): void {
+  if (suspended) return;
   katamari.scan();
   const snapshot = { ...engine.snapshot(), hasMedia: !!video };
   if (!session && performance.now() < preparingUntil && state?.settings.enabled) {
@@ -155,6 +160,10 @@ function relay(): void {
   }
 }
 function invalidate(reason: string, forward = true, preparing = false): void {
+  captionLoader.stop();
+  pendingSource = false;
+  sourceConfirmed = false;
+  engine.setTimelineReady(false);
   preparingUntil = preparing ? performance.now() + 7000 : 0;
   katamari.reset();
   epoch++;
@@ -166,6 +175,7 @@ function invalidate(reason: string, forward = true, preparing = false): void {
   publish();
 }
 function attachVideo(): void {
+  if (suspended) return;
   const candidates =
     location.origin === SITE_ORIGIN && !episodeId(location.href)
       ? []
@@ -177,11 +187,16 @@ function attachVideo(): void {
     video.removeEventListener('emptied', sourceChange);
     video.removeEventListener('loadedmetadata', sourceReady);
   }
-  if (video || candidates.length > 1)
+  // A page may replace its video while its fresh playback request is in flight.
+  // Keep that request's generation, but never reuse a previous episode's cues.
+  if ((video && !pendingSource) || candidates.length > 1)
     invalidate(
       'Player changed or multiple media elements were found. Reload the episode to establish a fresh timeline.',
     );
   engine.detach();
+  sourceRevision++;
+  sourceConfirmed = false;
+  engine.setTimelineReady(false);
   warning?.remove();
   warning = null;
   lastWarning = '';
@@ -192,10 +207,15 @@ function attachVideo(): void {
     video.addEventListener('loadstart', sourceChange);
     video.addEventListener('emptied', sourceChange);
     video.addEventListener('loadedmetadata', sourceReady);
+    // The event may have fired before this element was inserted/observed.
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) sourceReady();
   }
   publish();
 }
 function sourceChange(): void {
+  sourceRevision++;
+  sourceConfirmed = false;
+  engine.setTimelineReady(false);
   const source = video?.currentSrc || video?.src || '';
   if (!pendingSource && boundSource !== null)
     invalidate(
@@ -204,6 +224,7 @@ function sourceChange(): void {
   boundSource = source || null;
 }
 function sourceReady(): void {
+  if (suspended || !video || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
   boundSource = video?.currentSrc || video?.src || null;
   if (pendingSource) {
     sourceConfirmed = true;
@@ -213,6 +234,71 @@ function sourceReady(): void {
     }
   }
   katamari.scan();
+}
+interface MediaBinding {
+  session: Session;
+  video: HTMLVideoElement;
+  source: string;
+  revision: number;
+  renderer: Renderer | null;
+  timing: ReturnType<FilterEngine['captureTiming']>;
+}
+function verifiedBinding(): MediaBinding | null {
+  return session && video && sourceConfirmed && !pendingSource && video.readyState >= 1
+    ? {
+        session,
+        video,
+        source: video.currentSrc || video.src,
+        revision: sourceRevision,
+        renderer: readyRenderer,
+        timing: engine.captureTiming(),
+      }
+    : null;
+}
+function sameCaptions(a: Session, b: Session): boolean {
+  return (
+    a.episode === b.episode &&
+    a.version === b.version &&
+    a.audioLanguage === b.audioLanguage &&
+    a.tracks.length === b.tracks.length &&
+    a.tracks.every((track, index) => {
+      const other = b.tracks[index]!;
+      return (
+        track.id === other.id &&
+        track.document.original === other.document.original &&
+        JSON.stringify(track.timeline) === JSON.stringify(other.timeline)
+      );
+    })
+  );
+}
+function restoreUnchangedBinding(
+  previous: MediaBinding | null,
+  next: Session,
+  generation: number,
+): void {
+  if (!previous || !sameCaptions(previous.session, next)) return;
+  // Allow the caller of fetch to start a media reload first. A metadata-only
+  // refresh has no new loadedmetadata event; only the exact verified binding
+  // can be restored. Any intervening media event invalidates this fallback.
+  setTimeout(() => {
+    if (
+      !suspended &&
+      epoch === generation &&
+      session === next &&
+      pendingSource &&
+      video === previous.video &&
+      sourceRevision === previous.revision &&
+      (video.currentSrc || video.src) === previous.source &&
+      video.readyState >= 1
+    ) {
+      engine.restoreTiming(previous.timing);
+      sourceReady();
+      if (previous.renderer) {
+        readyRenderer = previous.renderer;
+        engine.setRenderer(previous.renderer);
+      }
+    }
+  }, 100);
 }
 function setSession(next: Session): void {
   preparingUntil = 0;
@@ -227,16 +313,20 @@ function setSession(next: Session): void {
   relay();
   publish();
 }
-async function readCaption(url: string): Promise<string> {
+async function readCaption(url: string, signal: AbortSignal): Promise<string> {
   const abort = new AbortController();
+  const cancel = () => abort.abort();
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) abort.abort();
   const timeout = setTimeout(() => abort.abort(), 5000);
   try {
     // Only HTTPS URLs supplied in the player's own successful English-track
     // metadata reach here. This is an ordinary page-context CORS request.
     const response = await originalFetch(url, { credentials: 'omit', signal: abort.signal });
-    if (!response.ok || Number(response.headers.get('content-length') ?? 0) > 3_000_000)
-      throw new Error('Caption unavailable.');
-    if (!response.body) throw new Error('Caption body unavailable.');
+    if (!response.ok)
+      throw new CaptionDownloadError(response.status === 429 || response.status >= 500);
+    if (Number(response.headers.get('content-length') ?? 0) > 3_000_000 || !response.body)
+      throw new CaptionDownloadError(false);
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let bytes = 0;
@@ -246,7 +336,7 @@ async function readCaption(url: string): Promise<string> {
       bytes += part.value.byteLength;
       if (bytes > 3_000_000) {
         await reader.cancel();
-        throw new Error('Caption limit exceeded.');
+        throw new CaptionDownloadError(false);
       }
       chunks.push(part.value);
     }
@@ -259,34 +349,53 @@ async function readCaption(url: string): Promise<string> {
     return new TextDecoder().decode(buffer);
   } finally {
     clearTimeout(timeout);
+    signal.removeEventListener('abort', cancel);
   }
 }
 async function observeResponse(
   value: unknown,
   requestEpoch: number,
   version: string | null,
+  previous: MediaBinding | null,
 ): Promise<void> {
   if (version && requestEpoch !== epoch) return;
   if (version) {
     const episode = episodeId(location.href);
     if (!episode) return;
-    const next = await loadSession(
+    const available = captionResources(value, false).map((resource) => ({
+      resource: resourceKey(resource.url),
+      requestUrl: resource.url,
+      language: resource.language,
+      format: resource.format,
+      kind: resource.kind,
+    }));
+    const next = await captionLoader.start(
       episode,
       version,
       audioByVersion.get(version) ?? null,
       englishResources(value),
-      (resource) => readCaption(resource.url),
+      (recovered) => {
+        if (suspended || requestEpoch !== epoch || !session || episodeId(location.href) !== episode)
+          return;
+        recovered.available = available;
+        recovered.audioLanguage = audioByVersion.get(version) ?? session.audioLanguage;
+        if (sameCaptions(session, recovered) && session.captionIssue === recovered.captionIssue)
+          return;
+        // Retain a working selected overlay while an unrelated English track
+        // recovers. Resetting it would expose original text during re-analysis.
+        session = recovered;
+        cachedSession = recovered;
+        engine.updateMetadata(recovered);
+        restoreUnchangedBinding(previous, recovered, requestEpoch);
+        relay();
+        publish();
+      },
     );
     if (requestEpoch === epoch && episodeId(location.href) === episode) {
-      next.available = captionResources(value, false).map((resource) => ({
-        resource: resourceKey(resource.url),
-        requestUrl: resource.url,
-        language: resource.language,
-        format: resource.format,
-        kind: resource.kind,
-      }));
+      next.available = available;
       setSession(next);
       await engine.rebuild();
+      restoreUnchangedBinding(previous, next, requestEpoch);
     }
   } else {
     for (const [id, audio] of audioMetadata(value)) audioByVersion.set(id, audio);
@@ -307,6 +416,7 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
   katamari.noteRequest(url);
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
   const version = method.toUpperCase() === 'GET' ? playbackVersion(url) : null;
+  const previous = version ? verifiedBinding() : null;
   if (version) {
     invalidate('Loading current episode caption metadata.', true, true);
     pendingSource = true;
@@ -331,7 +441,7 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
     try {
       const clone = response.clone();
       if (Number(clone.headers.get('content-length') ?? 0) <= 3_000_000)
-        await observeResponse((await clone.json()) as unknown, requestEpoch, version);
+        await observeResponse((await clone.json()) as unknown, requestEpoch, version, previous);
     } catch {
       /* Truthful unavailable state remains; do not alter playback. */
     }
@@ -510,6 +620,7 @@ function interceptRenderer(): void {
   });
 }
 async function retry(): Promise<void> {
+  await captionLoader.retry();
   katamari.retry();
   if (cachedSession && session && cachedSession.version === session.version) {
     engine.update(state ?? freshState());
@@ -647,6 +758,7 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
 });
 interceptRenderer();
 function start(): void {
+  observer?.disconnect();
   attachVideo();
   const seen = new WeakSet<HTMLIFrameElement>();
   observer = new MutationObserver(() => {
@@ -699,20 +811,49 @@ function checkNavigation(): void {
   }
 }
 setInterval(() => {
+  if (suspended) return;
   checkNavigation();
   if (video && !video.isConnected) attachVideo();
   publish();
 }, 500);
-window.addEventListener(
-  'pagehide',
-  () => {
-    katamari.dispose();
-    engine.detach();
-    observer?.disconnect();
-    warning?.remove();
-  },
-  { once: true },
-);
+window.addEventListener('pagehide', (event: PageTransitionEvent) => {
+  resumeBinding = event.persisted ? verifiedBinding() : null;
+  suspended = true;
+  captionLoader.stop();
+  // Keep only a completed, verified binding across a cached-page restore.
+  if (!resumeBinding) invalidate('Waiting for fresh playback metadata after navigation.');
+  if (event.persisted) katamari.pause();
+  else katamari.dispose();
+  engine.detach();
+  observer?.disconnect();
+  warning?.remove();
+});
+window.addEventListener('pageshow', (event: PageTransitionEvent) => {
+  if (!event.persisted || !suspended) return;
+  suspended = false;
+  checkNavigation();
+  const saved = resumeBinding;
+  resumeBinding = null;
+  if (
+    saved &&
+    video === saved.video &&
+    video.isConnected &&
+    session === saved.session &&
+    (video.currentSrc || video.src) === saved.source &&
+    sourceRevision === saved.revision &&
+    video.readyState >= 1
+  ) {
+    engine.attach(video);
+    engine.setTimelineReady(true);
+    if (readyRenderer) engine.setRenderer(readyRenderer);
+  } else
+    invalidate('Player changed while this page was cached. Waiting for fresh playback metadata.');
+  start();
+  // Even an unverified restored player needs its scheduler/listeners attached
+  // so a later fresh playback response can recover it. Timeline remains false.
+  if (video) engine.attach(video);
+  publish();
+});
 window.postMessage({ channel, kind: 'hello' }, location.origin);
 // Retry the handshake because MAIN/ISOLATED script ordering is not a contract.
 setTimeout(() => window.postMessage({ channel, kind: 'hello' }, location.origin), 100);
