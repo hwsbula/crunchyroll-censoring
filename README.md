@@ -1,148 +1,118 @@
 # CrunchyRoll Censoring
 
-A local Chrome Manifest V3 extension for English profanity filtering on Crunchyroll desktop. **Version 0.1.12 simplifies the popup for everyday watching**, with readable language names, separate audio/subtitle statuses and a masked occurrence list. Choose **Settings → Developer tools → Show developer tools** to reveal caption diagnostics, episode IDs, manual timing correction and audio padding. This switch starts off and saves only on this installation; coverage warnings always remain visible.
+A Chrome extension that filters selected English words in supported Crunchyroll subtitles and silences matching English-dub caption cues. Filtering runs locally, with configurable word lists, per-occurrence exceptions, and optional Chrome settings sync.
 
-Automatic timing for supported opening promos, introduced in 0.1.10, remains enabled regardless of the developer display setting. The user reports testing that correction successfully on a few Crunchyroll episodes. Automated checks use synthetic fixtures; this environment has not independently verified live playback. Dubs without matching English dialogue/CC and unsupported rendering/timelines remain uncovered. See the [timing investigation](docs/TIMING-INVESTIGATION.md).
+This is an independent project, unaffiliated with Crunchyroll.
+
+[Download the latest release](https://github.com/hwsbula/crunchyroll-censoring/releases/latest) · [Privacy policy](docs/PRIVACY.md) · [Report a problem](https://github.com/hwsbula/crunchyroll-censoring/issues)
+
+## What it does
+
+- Replaces matching words with `****` in supported English subtitle renderers while preserving their styling.
+- Silences the **whole caption cue** containing a match when suitable English-dub closed captions are available. Surrounding dialogue may also be silenced.
+- Accounts for supported opening promos automatically, using fresh timing metadata for each episode, including autoplay transitions.
+- Lets you review detected matches, seek to their timestamps, and Ignore/Unignore individual occurrences.
+- Provides searchable built-in categories, custom words and phrases, settings backups, and optional settings sync.
+
+## Coverage and limitations
+
+**Filtering is not guaranteed to catch every word.** Coverage depends on the episode's captions, timing metadata, and player renderer. Check the popup's separate **Audio filtering** and **Subtitle filtering** statuses; an unavailable status explains which function cannot run.
+
+| Playback choice                                 | Supported behavior                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| English audio with matching English dialogue/CC | Audio cue muting; English subtitle filtering where the renderer is supported |
+| Japanese audio with English subtitles           | English subtitle filtering where supported; Japanese audio stays unchanged   |
+| Subtitles off                                   | Audio filtering can continue if matching English CC data is accessible       |
+| Non-English subtitles                           | Text stays unchanged                                                         |
+
+English translation or signs-only subtitles cannot substitute for matching dub CC. Hardcoded subtitles cannot be replaced. Unsupported timelines, ads, or caption-rendering paths can prevent filtering. Dictionary matching can miss unfamiliar spellings or censor harmless uses of ambiguous terms.
+
+Automated tests use synthetic players. A user has reported successful opening-promo timing correction on several real episodes; independent live-service verification remains incomplete. See [compatibility and live verification](docs/COMPATIBILITY.md) and the [release verification records](docs/RELEASE.md).
 
 ## Install
 
-The release contains `dist/` and `artifacts/crunchyroll-censoring-0.1.12.zip` (manifest at ZIP root). To install without building:
+Requires **desktop Chrome 120 or newer** and normal access to the Crunchyroll episode you want to watch. No separate extension account, API key, or extension subscription is required. Mobile Chrome is not supported.
 
-1. Keep the extracted folder in a permanent location.
-2. Open `chrome://extensions` in Chrome 120 or newer and enable **Developer mode**.
-3. Select **Load unpacked**, then choose **`dist`** in this repository. If installing from the ZIP, extract it and select the directory containing `manifest.json` instead.
-4. Pin **CrunchyRoll Censoring**. Reload any already open Crunchyroll episode so its player starts with the extension.
-5. Open the popup and read both coverage statuses before playback. A warning also appears over an accessible player when coverage is unavailable. **There is no “fully filtered” label.**
+1. Open the [latest GitHub release](https://github.com/hwsbula/crunchyroll-censoring/releases/latest) and download **`crunchyroll-censoring-<version>-extension.zip`** under **Assets**.
+2. Extract the ZIP into a permanent folder. Its root should contain `manifest.json`.
+3. Open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**.
+4. Select the extracted folder containing `manifest.json`.
+5. Pin **CrunchyRoll Censoring**, then reload any open Crunchyroll episode.
 
-For a source build, use Node.js 24 and npm 11:
+GitHub's **Source code** downloads contain development files and require a build before installation. To build from source, see [Development](#development).
 
-```bash
-cd /workspace/chrome-extension-builder
-npm ci
-npx playwright install chromium
-npm run release
-```
+### Update an unpacked installation
 
-`npm run release` requires formatting, lint, strict TypeScript, unit tests, build/manifest validation, and the Chromium suite to pass before packaging. `npm run build` only creates `dist/`; `npm run package` only builds and packages. Neither alone proves live compatibility. In this cloud workspace, the installed browser cache is selected with:
+Download and extract the latest extension ZIP, then replace the files in the **same folder originally loaded into Chrome**. At `chrome://extensions`, click **Reload** on CrunchyRoll Censoring, then reload Crunchyroll.
 
-```bash
-PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release
-```
-
-Use `npm run dev` for rebuilds, then **Reload** the extension in Chrome and reload the episode. No extension backend, API key or extension subscription is needed. Chrome may sync preferences through your Chrome account; the store submission is a separate publisher action.
-
-## Updating an existing installation
-
-For 0.1.12, extract `artifacts/crunchyroll-censoring-0.1.12.zip`, then copy its contents into the **same folder you originally loaded into Chrome**, replacing the existing files. Open `chrome://extensions`, click **Reload** on CrunchyRoll Censoring, then reload the Crunchyroll episode page. Keeping the loaded folder preserves the extension ID and its local preferences/exceptions; do not remove the old extension or load a second copy from another folder.
-
-**Bitmovin captions and autoplay:** choose **English [CC]** for an English dub, or **English** subtitles for Japanese audio, in Crunchyroll as usual. CrunchyRoll Censoring automatically opens the source-identified subtitle menu, reads its checked item and closes it; only the temporary popup it opens is concealed during that read. It never selects a language, turns subtitles on, or changes autoplay. A user-opened menu stays visible and open. This check repeats with fresh metadata for each episode instead of assuming the previous episode's language or cues apply. Play or seek to a caption: text status becomes **active** after the displayed text agrees with that episode's identified English track. If the bounded automatic read cannot verify the selection, it closes/restores its own menu and reports unavailable; open the menu yourself and use **Refresh player**. Ambiguous English variants and unrecognized/localized labels stay unfiltered. A very early caption can remain unfiltered while selection is still unresolved; the popup reports loading, never active. Live timing of that initial read remains unverified.
-
-**Subtitle cue association (introduced in 0.1.8):** the supplied inline caption element is supported. Earlier versions rejected a readable cue whenever it fell outside its exact source interval. The new exact-text fallback binds a unique full line only within the selected current English track, retaining original text, styling and per-occurrence Ignore choices. The user reports subtitle filtering now works on the reported episode. Their two audio examples both place speech 20 seconds later than the caption-file timestamps; independent live playback remains unavailable here. If the new warning says text matches no complete cue, the displayed wording/source differs and further inspection is required. A missing/empty layer alone is no longer described as proof of hardcoded subtitles.
-
-**Why the waiting message flashed in 0.1.2:** briefly empty/replaced caption elements and cue redraws could produce a loading state, which the large player banner displayed immediately. This was the extension's coverage notice, not a Crunchyroll error or proof by itself of a hardcoded subtitle. Version 0.1.3 retains verification across replacement of the same track's layer, allows a bounded redraw check and waits 1.5 seconds before displaying a continuous loading notice. Popup statuses remain immediate. Missing matching CC, unsupported rendering and persistent caption failures still produce player warnings; they are not hidden by settings. Transition metadata preparation has a seven-second bound and does not arm stale cues.
-
-The 0.1.1 timestamp fix routes navigation through the player's registered Media Session `seekto` handler when available, so the player can update its own controls and playback state. Native media seeking remains the fallback for players without a registered handler. CrunchyRoll Censoring waits for seek completion and does not call Play/Pause or change volume/mute choices. If the player explicitly disables or rejects seeking, the extension reports failure and does not bypass that decision with a raw video-time assignment.
-
-## Recovery when filtering stops
-
-Version 0.1.12 reconnects to ready/replaced videos, retries temporary caption-download and extension-registration failures, and restores a verified player after browser back/forward caching. Subtitle selection checks retry twice when player controls initially lack selected-language metadata. Normal extension service-worker sleep is not meant to stop the in-page filter.
-
-If a temporary caption failure persists, **Refresh player** now retries the failed current caption downloads as well as rechecking the renderer. It does not change your subtitle selection or request authentication/playback URLs. Missing CC, expired resource access, an unverified new media source, or an unsupported renderer still shows **Unavailable**. A reload may still be necessary in those cases. Refresh the episode once after installing an extension update so the open page receives the new scripts.
-
-See [the recovery investigation](docs/RECOVERY.md) for reproduced causes, safeguards, and verification limits. These are proven regression fixes in synthetic fixtures; the user's intermittent live failure has not been directly reproduced here.
-
-## Caption timing and opening promos
-
-Version 0.1.10 reads external English caption tracks from the current playback response's MAIN segment. For a continuous timeline containing optional opening promos/logos followed by one MAIN segment, it adds MAIN's start to the original cue times. This happens before playback, so visible subtitles are not required for scheduling. Developer diagnostics report the metadata adjustment and displays/seeks playback timestamps. Native captions keep their original text, timing and styling; their renderer already handles playback timing.
-
-**Leave “Additional CC correction” at 0 normally.** The manual control is available only with **Settings → Developer tools → Show developer tools** enabled. Hiding tools does not erase saved padding or a session correction; any active manual correction remains visible in the popup with a Reset adjustment button. The metadata adjustment is separate from this optional manual correction. Do not enter +20 on top of a reported +19.061 metadata adjustment. The manual correction is for an independently verified residual discrepancy; it resets on episode/reload, never syncs, and cannot bypass unsupported metadata or a mismatched media timeline. Different episodes can have different prefixes or none. Autoplay loads fresh metadata rather than reusing the prior offset.
-
-Automatic mapping requires a finite native video duration within one second of the described continuous timeline. Ads, excluded timeline segments, gaps/overlaps, multiple MAIN segments, unknown layouts, explicit VTT timestamp maps and cues beyond MAIN's duration are not automatically mapped. In those cases audio and timestamp navigation are unavailable while independently supported English text filtering can continue. Unknown duration reports loading. Source replacement and sustained displayed-cue disagreement invalidate affected scheduling. These guards do not establish universal synchronization; the checklist below covers additional live scenarios.
-
-Captions without segment metadata retain the legacy path. Matching English dialogue/CC is still required for English audio; translations and signs tracks cannot substitute for it. Japanese audio remains untouched. Whole-cue muting can silence surrounding dialogue.
+Keeping the same loaded folder preserves the extension ID, saved settings, and local Ignore choices. Avoid removing the extension or loading a second copy from another folder when updating. Unpacked installations require this manual update process.
 
 ## Use
 
-- **English audio:** leave language mode on Automatic. The observed episode-version metadata must identify English, and accessible English **dialogue/CC** from that same playback version must exist. English translations in the `subtitles` collection and signs-only subtitles do not drive dub muting. If detection is missing, explicitly choose **Manual: English audio** only when that is the actual audio; a matching CC track and a fresh media timeline are still required.
-- **Japanese audio:** choose Japanese audio and English subtitles in Crunchyroll. Identified English text can be censored in a supported renderer. Japanese audio is never muted, including when an English manual override conflicts with reliable Japanese metadata.
-- **Unknown or unsupported audio:** audio stays unchanged. The popup reports the unresolved/unsupported state. An override fills missing detection only; reliable detected metadata takes priority.
-- **Non-English subtitles:** always remain unchanged. SubtitlesOctopus selection uses the exact observed resource URL; the Bitmovin overlay uses the source-inspected subtitle menu's checked track label plus unambiguous current-version resource metadata. The website interface language and English-looking dialogue never establish language. A resource request alone is never treated as selected, because players can prefetch.
-- **Subtitles off:** audio filtering can continue if matching English CC data is accessible independently. CrunchyRoll Censoring does not turn subtitles on. If the data is not accessible, enable available English CC yourself and use Refresh player, or reload the episode with CC selected. There may simply be no CC for that dub.
-- **Occurrence review:** timestamps seek the current player without navigating/reloading the page. “Upcoming · detected” is a prediction; “Censored · audio/text” records an applied action in this playback session. Past detections with no applied action say “Detected · not censored”. Original terms and **all matching words in context** are masked until **Reveal originals** is checked, including ignored matches.
-- **Ignore/Unignore:** changes just the exact occurrence, identified by episode/version, track, original cue digest and position, and matched term digest. Another non-ignored match in the same cue still silences that whole cue. Changes recompute text and audio scheduling immediately.
-- **Settings:** add one literal word/phrase per line; uncheck built-in terms you do not want. Save to update all active Crunchyroll tabs. Clear saved exceptions has an explicit confirmation. The term editor displays original terms; the popup defaults to masking.
+1. Choose your audio and subtitle tracks in Crunchyroll. For an English dub, select **English [CC]** when available. For Japanese audio, select **English** subtitles.
+2. Open the extension popup, keep **Enabled** on, and leave **Audio mode** on **Automatic detection** normally.
+3. Check both filtering statuses. Subtitle coverage may remain loading until a displayed cue can be verified. Read any unavailable reason before relying on filtering.
 
-## Timing, matching, and retention
+The extension checks the selected subtitle track automatically and preserves your language and autoplay choices. If detection cannot verify the selection, open Crunchyroll's subtitle menu yourself and click **Refresh player** in the extension.
 
-The expanded catalogue is in `src/core/terms.ts`. All six categories, including mild name-calling, sexual anatomy, clinical sexual vocabulary and euphemisms, start enabled. Settings provides search, per-term switches and Enable/Disable category controls. Category buttons affect the whole category, including search-hidden terms; click Save settings to apply. Existing disabled terms, custom words and saved exceptions are retained. New built-ins start enabled. See [term coverage and ambiguity](docs/TERMS.md) for examples, matching rules and limitations. No finite dictionary covers every spelling or euphemism.
+In **Detected matches**, timestamps seek within the current episode. **Upcoming** means a match has been detected but has not yet been censored. **Censored · audio/text** records an applied action in this session. Originals remain masked until you choose **Reveal originals**.
 
-Matching is case-insensitive, uses Unicode word boundaries, normalizes whitespace, full-width characters and curly apostrophes, and handles repeated matches. Punctuation in terms is literal; custom input is never a regular expression. “ass” does not match “class”. Apostrophes delimit words, so a base term can match before a possessive/contraction suffix. Longer phrases take precedence over overlapping shorter terms. Empty terms are rejected; equivalent terms are deduplicated.
+**Ignore** restores that occurrence; **Unignore** enables its filtering again. Another enabled match in the same cue still requires muting that whole cue.
 
-The inspected caption contracts provide cue timing, **not word timestamps**. The extension silences each full matching cue, with default **80 ms lead-in / 100 ms trailing padding**, configurable from 0 to 300 ms each. Surrounding dialogue can also be silenced. It does not generate beeps or estimate word times. Scheduling uses media time, merges overlaps, and reevaluates after media events, seeks, replay, playback-rate changes, rule changes and Ignore/Unignore. Direct `video.muted` writes, including an explicit mute while extension muting is already active, preserve the user's intent; volume is never changed.
+### Choose what to filter
 
-Preferences and custom terms are cached locally and, by default, offered to Chrome settings sync. Up to 1,000 hashed occurrence exceptions stay local. Complete subtitle tracks and occurrence/action logs stay in frame memory and are discarded with the page/session. The popup/action log is bounded to 1,000 entries; scheduling still considers all detected matches (up to 20,000). Track parsing is bounded to 3 MB, 12,000 cues per track, and 8,000 visible characters per cue; up to six English resources are preloaded. See [Privacy](docs/PRIVACY.md).
+Open **Settings** to search built-in terms, switch individual terms or whole categories on/off, and add one custom literal word or phrase per line. Click **Save settings** to apply changes to active Crunchyroll tabs. Category buttons affect the whole category, including terms hidden by search.
 
-## Coverage and open requirements
+All six categories start enabled, including mild name-calling and sexual anatomy. Review them to suit your preferences. Matching is case-insensitive and respects word boundaries; custom terms are literal text. See [term coverage and ambiguity](docs/TERMS.md).
 
-| Area                                                                     | Implemented / fixture-tested                                                                                                                                                                 | Live Crunchyroll verification                                                                                  |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| English matching CC → whole-cue audio silencing                          | Yes: actual unpacked MV3 runtime and a real HTML media element playing a synthetic tone                                                                                                      | User reports working; independent verification **unavailable**                                                 |
-| Japanese audio + English subtitle censorship                             | Yes: no audio muting, even with a conflicting English override                                                                                                                               | **Unverified**                                                                                                 |
-| Missing CC / unknown audio / unsupported renderer                        | Truthful separate statuses, player warning, audio left unchanged where unavailable                                                                                                           | **Unverified**                                                                                                 |
-| Non-English subtitles                                                    | Exact observed resource language; originals untouched in the fixture                                                                                                                         | **Unverified**                                                                                                 |
-| ASS pre-render redaction and restoration                                 | Uses the recognized existing SubtitlesOctopus instance, original source tags, layout and cue times                                                                                           | Current constructor exposure and actual canvas output **unverified**                                           |
-| Identified Bitmovin DOM captions (WebVTT or ASS cue source)              | Filter the supplied overlay structure in the mutation microtask before browser paint; retain native nodes/styles and originals. Current English track selection and exact cues are required. | User reports 0.1.2 appears to work; updated verification **not live-tested**                                   |
-| Automatic selection / autoplay                                           | Three actual native-ended transitions on a synthetic site, fresh identities, English → Japanese → Spanish subtitles → English, no user menu opens; native preference/playback preserved      | Current service menu timing, popup ownership and actual autoplay **unverified**                                |
-| Popup/settings, persistence, exceptions, keyboard, tab and frame routing | Tested in Chromium with the built extension, including browser restart and cross-origin frame replacement                                                                                    | Actual user toolbar click and Chrome 120 baseline **unverified**                                               |
-| Fullscreen                                                               | Fixture player-container fullscreen works; no duplicate subtitle renderer is added                                                                                                           | Actual player fullscreen **unverified**; video-element-only fullscreen cannot contain an HTML coverage overlay |
-| Ads / episode and source changes                                         | Invalidate cues and release owned muting on observed playback requests, source reset, player replacement or navigation                                                                       | Same-source server-inserted ads / unannounced timeline remapping **not established**                           |
+### Settings sync and backups
 
-**Universal English-audio censorship remains an unmet part of the broader goal.** Some English dubs have no matching CC. Translations of Japanese dialogue, signs tracks, other episode versions, unavailable resources, malformed/unsupported captions and unknown audio do not establish audio coverage. The warning is “Audio filtering unavailable”, with the reason; subtitle filtering can continue independently when genuinely supported. [Crunchyroll's supplied help link](https://help.crunchyroll.com/hc/en-us/articles/360037400412-Subtitles-are-not-showing-up-on-web) concerns caption availability; during this session it redirected to the help root rather than exposing the article text.
+**Use Chrome settings sync** starts enabled. With Chrome account sync enabled, saved preferences and word choices can transfer between installations with the same extension ID. Local playback works without sync; quota errors and conflicts appear in Settings. The sync status does not confirm delivery to another device.
 
-The adapter currently requires these **unverified integration conditions**:
+Use **Export saved settings** and import the JSON backup to transfer preferences manually. Backups and sync exclude local occurrence Ignore choices. Unpacked copies are not automatically installed on another computer through this feature.
 
-1. The page uses the source-inspected `/playback/v4/<version>/web/(chrome|firefox)/play` response shape, with external text descriptors on `stitchedElements` MAIN and a supported continuous timeline. Without stitched elements, legacy `captions` and `subtitles` records supply language, format and resource URL. It only observes page-initiated requests, not invented/authenticated endpoint calls.
-2. Episode metadata exposes `data[].id` and `episode_metadata.audio_locale` matching that playback version; otherwise audio detection remains unknown.
-3. English resources can be fetched with ordinary page-context CORS and no cookies. Fetch failure is reported, never worked around with extra privileged access or alternate versions. Preloading adds a bounded delay (up to the 5-second request timeout) before returning the page's playback response.
-4. Text censorship supports two guarded paths. SubtitlesOctopus must expose its documented constructor/lifecycle and an associated English `subUrl`; prepared ASS is supplied before construction/selection. The Bitmovin path requires the supplied `#player-container > .bitmovinplayer-container` hierarchy with its distinct `div > div > ul` caption overlay, the source-inspected `audio-text-track-menu`/toggle and checked radio labels, one unambiguous English resource, and exact displayed cue agreement apart from whitespace. Current-time cues are preferred; a complete displayed line may also identify one unique cue anywhere in that same selected track. Repeated lines without an unambiguous current cue remain unfiltered. Automatic inspection needs that menu to expose a checked item within two seconds and to close normally; a failed close restores visibility within a further 500 ms. Other open controls defer inspection, and real pointer/keyboard input cancels it. Caption text nodes are changed in the DOM mutation microtask before paint, with inline elements, layout and original text retained. No replacement layer, global DOM rewrite or network response substitution is used. Different markup, unknown labels, wording differences, ambiguous repeated lines, unmatched combinations of overlapping cues, canvas-only output, native browser text tracks and hardcoded subtitles remain unsupported. Exact-text fallback alone never derives an audio offset. Supported MAIN segment metadata maps source cues into the continuous playback timeline. An optional additional manual correction can shift CC audio intervals and timestamp links. Sustained observed timing disagreement disables affected audio and links; this is a limited mismatch detector, not universal clock verification. An empty overlay cannot establish coverage: it waits for a real cue and reports unavailable if a known cue remains absent. The user supplied a real inline, pre-line LI caption node, confirming DOM text on the reported episode; exact cue timing, menu behavior and before-paint filtering remain independently live-unverified.
-5. The top page and the known `static.crunchyroll.com/vilos-v2/web/vilos/player.html` frame exchange current metadata before the renderer starts. Both execution contexts are explicitly handled. Other frame locations are not guessed.
-6. A fresh media timeline can be associated with the observed playback. Source/ad changes without fresh playback metadata fail closed until a reload. Browser timer throttling and same-source ad insertion still require live validation; millisecond precision is not guaranteed by a fixture test.
+When moving to a store installation with a different extension ID, export first, disable the old copy, then import and verify your settings in the new copy. See the [migration instructions](store/PUBLISH.md#move-your-existing-settings-safely).
 
-No DRM, subscription, sign-in, media extraction, authentication token capture, cloud transcription, microphone access, speech-recognition fallback, backend, analytics or store publication was added. The supplied reference repository was read and never modified.
+## Troubleshooting
 
-## Verification and manual checklist
+| Problem                                            | What to check                                                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Audio filtering unavailable                        | Confirm English audio and matching English CC are available. Translated subtitles alone are insufficient. Read the popup's reason.                            |
+| Subtitles visible but filtering unavailable        | Confirm the selected English track in Crunchyroll, then click **Refresh player**. Visible text alone does not establish a supported renderer or matching cue. |
+| Filtering stops after loading or changing episodes | Click **Refresh player** to recheck the renderer and retry failed caption downloads. If it persists, reload the episode.                                      |
+| Audio or timestamp links seem early/late           | Leave **Additional CC correction** at **0** normally; supported promos are handled automatically. Report a remaining discrepancy with two examples.           |
 
-See [Release verification](docs/RELEASE.md) for actual commands, results and screenshot paths. Synthetic fixtures are only under `tests/fixtures/`; they are never production data or packaged assets.
+For diagnostics, enable **Settings → Developer tools → Show developer tools**. The popup then exposes caption diagnostics and manual timing controls. Manual correction resets on episode changes or reload. Coverage warnings remain visible with developer tools hidden.
 
-The user reports that the 0.1.10 promo correction works on several live episodes. To inspect that correction in 0.1.12, enable Settings → Developer tools and open Caption diagnostics. The reported response should show a 19.061-second metadata adjustment; this is episode-specific. Leave additional correction at 0. Timestamp links and whole-cue muting should agree with playback, including after autoplay advances. This environment's verification is synthetic; the complete live checklist below has not been independently run here.
+After installing an extension update, reload the Crunchyroll page once so it receives the updated scripts. Detailed investigations: [player recovery](docs/RECOVERY.md) and [caption timing](docs/TIMING-INVESTIGATION.md).
 
-For an authorized live browser check:
+## Privacy and permissions
 
-1. Load `dist/`, reload Crunchyroll, open a playable English dub with English CC. Without opening the menu, check that CrunchyRoll Censoring identifies the selected track automatically. At a known cue, verify only matched words become `****`, audio is silenced, and no uncensored layer or warning flashes appear. Leave Crunchyroll's autoplay enabled and watch through at least two episode transitions: no manual menu action should be needed, identities/timings must change and actual playback must keep progressing. Test subtitles off with accessible CC. If automatic verification fails, confirm English [CC] in the native menu and Refresh player; do not assume coverage before the popup says active.
-2. Switch to Japanese audio + English subtitles. Verify text filtering and **unchanged Japanese audio**. Set the conflicting English override and verify reliable Japanese metadata still wins. Switch to Spanish/another non-English subtitle and verify every original word remains unchanged.
-3. Play an English dub without CC. Expect an in-player and popup **Audio filtering unavailable** warning. Ensure English translation/signs timing never mutes the dub. Repeat with unknown languages and an unsupported/hardcoded renderer.
-4. Ignore one of two matches in a cue; only that word returns and the other still requires whole-cue silence. Ignore both, Unignore one, seek via the timestamp, replay, pause, buffer, use different playback rates, and edit terms during a paused cue. Disable filtering and verify original subtitles and the user's volume/mute choice return.
-5. Test the actual toolbar popup, keyboard focus, fullscreen container, episode navigation, audio/subtitle track switching, autoplay and multiple tabs. Open the native menu yourself and ensure the extension leaves it open/visible; verify a new episode with non-English subtitles or subtitles off is not switched to English. A saved exception must not affect another episode/version/track. Restart Chrome to check settings and exceptions. Clear exceptions in options and verify active tabs update.
-6. Exercise any ads and same-source discontinuities on the account/region being tested. Do not declare that path covered until its timeline mapping and ad boundaries have been observed. Record renderer/format and cue availability without copying cookies, tokens, signed URLs or subtitle tracks into logs.
+Captions and playback logs are processed in page memory. Preferences and hashed occurrence exceptions are stored locally; only saved preferences and word choices are offered to Chrome Sync. There is no developer backend, analytics, cloud transcription, or microphone access.
 
-## Prepare the public Chrome Web Store update
+The extension uses the **storage** permission and host access to Crunchyroll's desktop site and its identified embedded player path. It does not bypass subscriptions or access controls. Read the [privacy policy](docs/PRIVACY.md) for retention, deletion, sync, and backup details.
 
-Run `npm run release:store` (in this workspace prefix `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright`). Upload `artifacts/crunchyroll-censoring-0.1.12-webstore.zip` as the store extension. The separate `artifacts/crunchyroll-censoring-0.1.12-submission-kit.zip` contains the upload ZIP, icon, actual UI screenshots, listing copy, privacy/permission explanations, reviewer notes and [publishing checklist](store/PUBLISH.md). It is not itself the extension upload. Update the **existing store item** to retain its extension ID and user settings. Select **Distribution → Public** in the developer dashboard and submit the package/listing changes for Google review. Preparing this package does not change store visibility or establish approval; dashboard access is required.
+## Development
 
-In Settings, **Use Chrome settings sync** shares saved preferences and word choices through Chrome's native sync storage. Sign into the same Chrome account and enable extension/settings sync on each desktop installation of the same store item. The UI reports storage readiness, not verified delivery to another device. Local playback remains available offline. Conflicts prompt a profile choice; very large word lists or native quota errors remain saved locally with a visible warning and retry. Local Ignore choices, captions and playback logs do not sync. See [Privacy](docs/PRIVACY.md).
+Use **Node.js 24** and **npm 11** with the committed lockfile:
 
-Before moving from the unpacked copy to the approved store version, update the old copy in the same loaded folder, click **Export saved settings**, then import and confirm that JSON file in the store installation. Keep the old copy disabled while the store copy is active. Different extension IDs do not share local/sync storage automatically. Backups contain preferences and word lists, not local occurrence exceptions. Keep your backup until you verify the new copy. Sync changes advance the saved revision; reload a stale form before saving over it.
+```bash
+git clone https://github.com/hwsbula/crunchyroll-censoring.git
+cd crunchyroll-censoring
+npm ci
+npm run build
+```
 
-## Publishing a GitHub release
+Load the generated `dist/` folder in Chrome. For rebuilds, use `npm run dev`, then reload the extension and episode. Build output and generated ZIPs are excluded from Git.
 
-The repository builds `dist/` on the runner; generated files are intentionally excluded from Git. The **Extension checks** workflow saves a build under the run's **Artifacts**. GitHub's automatic **Source code (zip)** is a snapshot of tracked source and cannot be loaded as the extension.
+See the [development and publishing guide](docs/DEVELOPMENT.md) for browser setup, checks, packaging, and GitHub releases. See [architecture](docs/ARCHITECTURE.md) for integration details and the [Web Store checklist](store/PUBLISH.md) for store updates. GitHub releases and Web Store publication are separate steps.
 
-The **Publish extension** workflow in `.github/workflows/release.yml` builds and attaches the installable ZIP directly to a GitHub Release, after all checks pass. Commit this workflow before tagging future releases. Publish a release with a tag matching the version in `package.json` and `public/manifest.json`, for example `v0.1.12`. Once the workflow succeeds, download `crunchyroll-censoring-0.1.12-extension.zip` from that release's assets, extract it and load the folder containing `manifest.json`.
+## Support and contributions
 
-To publish `v0.1.12`, first merge the tested version to `main` and create/push the matching tag (`git tag v0.1.12` then `git push <your-target-remote> v0.1.12`). Confirm the tag points to that tested commit. Then choose **Actions → Publish extension → Run workflow**, select `main`, enter **v0.1.12** and run it. It checks out that exact existing tag without moving it. If no GitHub Release exists, it creates a draft, uploads the tested ZIP/checksum and publishes it only after both uploads succeed. Existing published releases receive missing assets; existing drafts remain drafts for you to publish. No manual ZIP upload is needed. Start a new workflow run after updating this file; rerunning an old failed run uses its old workflow definition. Merely editing a release does not trigger a new build. GitHub Actions must be enabled for the repository. The built-in token handles asset uploads; no personal token is needed.
+[Open an issue](https://github.com/hwsbula/crunchyroll-censoring/issues) with the extension and Chrome versions, episode page link, selected audio/subtitle options, exact coverage message, and steps to reproduce. For timing problems, include two expected/observed timestamps. Share diagnostic text only; omit account credentials, request headers, signed resource URLs, and full network exports.
 
-An immutable published release cannot accept new assets. If that feature is enabled, create/push the version tag first, save a **draft** release using that existing tag, then run the workflow manually before publishing the draft. An existing asset with different bytes is preserved and causes a visible failure rather than being overwritten. See [release verification](docs/RELEASE.md) for local checks and the remaining GitHub-hosted verification gap.
+For code changes, follow the [development guide](docs/DEVELOPMENT.md), keep permissions limited, and include relevant regression checks. Describe whether verification used synthetic fixtures or real playback.
 
-## Icon artwork
+## License and artwork
 
-The toolbar, extension management page, popup and options use the bundled Crunchyroll brand symbol from CoreUI Icons, with a white fill and orange background. See [icon source and regeneration](assets/ICON-SOURCE.md). This is an independent extension, not an official Crunchyroll product.
+The package is currently marked **UNLICENSED**; the repository does not grant an open-source license. Third-party icon attribution and license information are documented in [Icon source](assets/ICON-SOURCE.md). Crunchyroll trademarks belong to their respective owner.

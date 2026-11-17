@@ -1,6 +1,10 @@
 # CrunchyRoll Censoring — current product
 
-A local MV3 profanity filter for English captions and matching English-dub audio on Crunchyroll desktop. Version 0.1.9 adds an explicit per-episode CC timing correction for audio and timestamp links, preserving exact-text subtitle association, sync, backups and unlisted store packaging. It remains an integration preview: the live service is inaccessible in this environment. Automatic alignment and universal English-dub coverage are unmet parts of the goal.
+A local MV3 profanity filter for English captions and matching English-dub audio on Crunchyroll desktop. Version 0.1.12 adds recovery from transient player/caption failures, alongside automatic timing for supported opening promos, configurable word lists, occurrence exceptions, settings sync, and backups. User-reported promo timing works on several episodes; independent live-service verification and universal English-dub coverage remain incomplete.
+
+## README documentation revision
+
+Reorganize the repository entry point around product behavior, coverage limits, release installation, everyday use, troubleshooting, privacy, and contributor setup. Use a stable latest-release link and portable build commands. Move the detailed integration boundaries/live checklist to [COMPATIBILITY.md](COMPATIBILITY.md) and development/release operations to [DEVELOPMENT.md](DEVELOPMENT.md). Preserve the current license declaration and distinguish user-reported live results from fixture tests. Documentation verification: repository-wide formatting, whitespace checks, and 41 relative links/anchors passed; the latest release asset names were confirmed on GitHub. No runtime or package version changes are needed.
 
 ## Decisions and acceptance criteria
 

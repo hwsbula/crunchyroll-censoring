@@ -16,7 +16,7 @@ The browser checks cover English CC, Japanese audio with English subtitles, igno
 
 Final command results, Chromium version and artifact inventory are recorded in PRODUCT.md after the release gate. Screenshots are saved outside the repository at `/tmp/quietroll-popup.png`, `/tmp/quietroll-options-desktop.png`, and `/tmp/quietroll-options-narrow.png`. They show synthetic data only. Checks include page identity, meaningful content, absence of framework/error overlays, relevant console errors, rendered screenshots and actual control interactions.
 
-Live Crunchyroll validation is **unverified**. The environment's proxy returned `CONNECT tunnel failed, response 403` for `https://www.crunchyroll.com`; a public lookup of the known static player returned 502. This is a network/access blocker, not evidence of a site bot challenge or that Crunchyroll is down. No real episode audio was tested, and no account authentication was attempted. The user-facing manual checklist and precise unverified integration contracts are in README.md.
+Live Crunchyroll validation is **unverified**. The environment's proxy returned `CONNECT tunnel failed, response 403` for `https://www.crunchyroll.com`; a public lookup of the known static player returned 502. This is a network/access blocker, not evidence of a site bot challenge or that Crunchyroll is down. No real episode audio was tested, and no account authentication was attempted. The manual checklist and integration contracts are in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Release assets
 
