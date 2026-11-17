@@ -1,6 +1,6 @@
 // Synthetic renderer only. No Bitmovin library, service account, or production
 // data is used here. The extension must NOT depend on this fixture's internals.
-const video = document.querySelector('video');
+let video = document.querySelector('video');
 const controls = document.querySelector('[data-testid="player-controls-root"]');
 const toggle = controls.querySelector('button');
 const parameters = new URL(location.href).searchParams;
@@ -90,7 +90,10 @@ function menu() {
         'aria-checked',
         String(
           index
-            ? !parameters.has('slow-menu') && !parameters.has('broken-menu') && selected === label
+            ? !parameters.has('slow-menu') &&
+                !parameters.has('broken-menu') &&
+                !(parameters.has('delayed-selection') && automaticReads < 2) &&
+                selected === label
             : (mode === 'english' ? 'English' : 'Japanese') === label,
         ),
       );
@@ -135,6 +138,8 @@ function menu() {
     }, 250);
 }
 async function begin(next, continuing = false) {
+  // Real media may finish loading before the site inserts it into the DOM.
+  if (parameters.has('late-video')) video.remove();
   if (parameters.has('stitched')) captionDelay = sequence ? 7.25 : 19.061;
   mode = next;
   document.querySelector('#fixture-state').textContent = 'Loading';
@@ -160,9 +165,18 @@ async function begin(next, continuing = false) {
   const stitched = parameters.has('stitched')
     ? `&stitched-prefix=${captionDelay}${parameters.has('stitched-ad') ? '&stitched-ad' : ''}`
     : '';
-  await fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}${stitched}`);
+  const playback = fetch(`/playback/v4/${version}/web/chrome/play?fixture=dom-${next}${stitched}`);
+  if (parameters.has('replace-video')) {
+    const replacement = video.cloneNode(false);
+    video.replaceWith(replacement);
+    video = replacement;
+    video.addEventListener('ended', autoplay);
+  }
+  await playback;
   video.src = audio();
   await new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
+  if (parameters.has('late-video'))
+    document.querySelector('.bitmovinplayer-container').append(video);
   if (!continuing) video.volume = 0.4;
   if (selected !== 'None') await textTrack(selected === 'Spanish');
   menu();
@@ -255,10 +269,11 @@ document.querySelector('#transients').addEventListener('click', () => {
     }, 400);
   }, 900);
 });
-video.addEventListener('ended', () => {
+function autoplay() {
   if (!document.querySelector('#autoplay').checked) return;
   sequence++;
   history.pushState({}, '', `/watch/DOMAUTO${sequence}/synthetic-fixture${location.search}`);
   void begin(document.querySelector('#next-audio').value, true).then(() => video.play());
-});
+}
+video.addEventListener('ended', autoplay);
 requestAnimationFrame(render);

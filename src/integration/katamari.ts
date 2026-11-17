@@ -301,9 +301,12 @@ export class KatamariCaptions {
     this.selectionLabel = null;
     this.selection = { language: null, track: null };
   }
-  dispose(): void {
+  pause(): void {
     this.reset();
     this.probe.dispose();
+  }
+  dispose(): void {
+    this.pause();
     document.removeEventListener('click', this.beforeSelection, true);
     document.removeEventListener('keydown', this.beforeSelection, true);
   }

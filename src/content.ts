@@ -1,6 +1,7 @@
 import { record, parseState } from './core/settings.ts';
 import { parseSnapshot } from './shared/protocol.ts';
 import { siteUrl } from './integration/metadata.ts';
+import { ConnectionRecovery } from './shared/recovery.ts';
 
 const token = crypto.randomUUID();
 const channel = 'quietroll-v1';
@@ -20,25 +21,29 @@ function post(kind: string, payload: unknown, requestId?: string): void {
     location.origin,
   );
 }
-async function initialize(): Promise<void> {
-  try {
+const connection = new ConnectionRecovery(
+  async () => {
     const response = record(
       (await chrome.runtime.sendMessage({ type: 'player:register' })) as unknown,
     );
     if (response.ok !== true) throw new Error('Could not register this player frame.');
-    state = parseState(response.data);
+    return parseState(response.data);
+  },
+  (next) => {
+    // A newer broadcast can arrive while registration is waiting for storage.
+    if (!state || next.revision >= state.revision) state = next;
     post('init', state);
-  } catch {
-    /* Popup reports no connection. Never enable a page without valid settings. */
-  }
-}
+  },
+);
 function command(payload: unknown): Promise<unknown> {
   const requestId = crypto.randomUUID();
+  // A rescan may include a five-second caption request plus parsing/analysis.
+  const timeoutMs = record(payload).action === 'retry' ? 10000 : 5000;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
       reject(new Error('The player did not respond. Reload the episode and retry.'));
-    }, 5000);
+    }, timeoutMs);
     pending.set(requestId, { resolve, reject, timer });
     post('command', payload, requestId);
   });
@@ -51,6 +56,8 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
     if (message.channel !== channel) return;
     if (message.kind === 'hello') {
       if (state) post('init', state);
+      // Unauthenticated page messages cannot trigger privileged work. The
+      // registration's own retry budget handles missing initial settings.
       return;
     }
     if (message.token !== token) return;
@@ -90,8 +97,9 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, respond) => {
   }
   if (message.type === 'frame:state') {
     try {
-      state = parseState(message.state);
-      post('settings', state);
+      const next = parseState(message.state);
+      if (!state || next.revision >= state.revision) state = next;
+      post('init', state);
       respond({ ok: true });
     } catch {
       respond({ ok: false });
@@ -99,6 +107,10 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, respond) => {
     return false;
   }
   if (message.type === 'frame:probe') {
+    if (!snapshot) {
+      if (state) post('init', state);
+      else connection.start();
+    }
     respond(snapshot ? { ok: true, data: snapshot } : { ok: false });
     return false;
   }
@@ -122,4 +134,19 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, respond) => {
   }
   return false;
 });
-void initialize();
+window.addEventListener('pagehide', () => {
+  connection.stop();
+  snapshot = null;
+  for (const request of pending.values()) {
+    clearTimeout(request.timer);
+    request.reject(new Error('The player page was suspended.'));
+  }
+  pending.clear();
+});
+window.addEventListener('pageshow', (event: PageTransitionEvent) => {
+  if (event.persisted) connection.start();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !state) connection.start();
+});
+connection.start();

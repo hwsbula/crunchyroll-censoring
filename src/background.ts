@@ -13,6 +13,7 @@ import type { SavedState, Settings } from './core/types.ts';
 import { episodeId, SITE_ORIGIN } from './integration/metadata.ts';
 import { SettingsSync, SYNC_PREFIX } from './shared/settings-sync.ts';
 import { readSettingsBackup, settingsBackup } from './core/backup.ts';
+import { retryableInitialization } from './shared/recovery.ts';
 
 const local = {
   get: (key) => chrome.storage.local.get(key),
@@ -29,16 +30,14 @@ const preferences = new SettingsSync(
   },
   broadcast,
 );
-const ready = Promise.all([
-  chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
-  chrome.storage.sync.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
-]).then(
-  async () => {
-    await preferences.start();
-    return true;
-  },
-  () => false,
-);
+const ready = retryableInitialization(async () => {
+  await Promise.all([
+    chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
+    chrome.storage.sync.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
+  ]);
+  await preferences.start();
+});
+void ready().catch(() => undefined);
 const registryKey = 'quietroll.frames.v1';
 interface Frame {
   tabId: number;
@@ -247,8 +246,7 @@ async function handleUi(raw: Record<string, unknown>): Promise<unknown> {
 chrome.runtime.onMessage.addListener((value: unknown, sender, respond) => {
   void Promise.resolve()
     .then(async () => {
-      if (!(await ready))
-        throw new Error('Local storage could not be initialized. Reload the extension.');
+      await ready();
       const raw = record(value);
       if (trustedContent(sender, chrome.runtime.id)) {
         if (raw.type !== 'player:register')
@@ -284,5 +282,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && Object.keys(changes).some((key) => key.startsWith(SYNC_PREFIX)))
-    void ready.then((ok) => (ok ? preferences.refresh() : undefined)).catch(() => undefined);
+    void ready()
+      .then(() => preferences.refresh())
+      .catch(() => undefined);
 });

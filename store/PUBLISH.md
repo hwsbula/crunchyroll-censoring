@@ -10,9 +10,9 @@ npm run release:store
 
 In this workspace use `PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright npm run release:store`.
 
-The command runs all source/browser checks before generating the extension and submission kit. Upload **`artifacts/crunchyroll-censoring-0.1.11-webstore.zip`** to the Chrome Web Store Developer Dashboard. Its root contains `manifest.json` and compiled runtime files. Do not upload the source ZIP, the whole repository or the submission-kit ZIP as the extension.
+The command runs all source/browser checks before generating the extension and submission kit. Upload **`artifacts/crunchyroll-censoring-0.1.12-webstore.zip`** to the Chrome Web Store Developer Dashboard. Its root contains `manifest.json` and compiled runtime files. Do not upload the source ZIP, the whole repository or the submission-kit ZIP as the extension.
 
-`artifacts/webstore-0.1.11/` contains the upload ZIP/checksum, icon, real UI screenshots, listing copy, privacy/permission explanations, reviewer notes and this checklist. `artifacts/crunchyroll-censoring-0.1.11-submission-kit.zip` is a convenient bundle of that folder for you; it is not the extension upload.
+`artifacts/webstore-0.1.12/` contains the upload ZIP/checksum, icon, real UI screenshots, listing copy, privacy/permission explanations, reviewer notes and this checklist. `artifacts/crunchyroll-censoring-0.1.12-submission-kit.zip` is a convenient bundle of that folder for you; it is not the extension upload.
 
 ## Dashboard steps
 
